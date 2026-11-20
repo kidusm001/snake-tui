@@ -56,23 +56,70 @@ Term term_poll_key_run(Env e, Term* f, IoWork* w) {
   return (Term)(uint32_t)ch;
 }
 
-Term load_high_score_run(Env e, Term* f, IoWork* w) {
-  FILE* fp = fopen("highscore.txt", "r");
-  if (!fp) return (Term)0;
-  uint32_t s = 0;
-  if (fscanf(fp, "%u", &s) != 1) s = 0;
-  fclose(fp);
-  return (Term)s;
+#define BSNK_MAGIC 0x4B4E5342u
+#define BSNK_MASK  0x534E414Bu
+#define BSNK_SALT  0x1337BEEFu
+
+struct __attribute__((packed)) HighScoreRecord {
+  uint32_t magic;
+  uint16_t version;
+  uint16_t flags;
+  uint32_t masked_score;
+  uint32_t checksum;
+};
+
+static uint32_t bsnk_checksum(uint32_t score) {
+  return (score ^ 0xA5A5A5A5u) + BSNK_SALT;
 }
 
 Term save_high_score_run(Env e, Term* f, IoWork* w) {
   uint32_t s = (uint32_t)f[0];
-  FILE* fp = fopen("highscore.txt", "w");
+  FILE* fp = fopen("highscore.bin", "wb");
   if (fp) {
-    fprintf(fp, "%u\n", s);
+    struct HighScoreRecord rec;
+    rec.magic = BSNK_MAGIC;
+    rec.version = 1;
+    rec.flags = 0;
+    rec.masked_score = s ^ BSNK_MASK;
+    rec.checksum = bsnk_checksum(s);
+    fwrite(&rec, sizeof(rec), 1, fp);
     fclose(fp);
   }
   return term_pak(CID(Unit), 0);
+}
+
+Term load_high_score_run(Env e, Term* f, IoWork* w) {
+  FILE* fp = fopen("highscore.bin", "rb");
+  if (!fp) {
+    FILE* old_fp = fopen("highscore.txt", "r");
+    if (old_fp) {
+      uint32_t old_s = 0;
+      if (fscanf(old_fp, "%u", &old_s) == 1) {
+        fclose(old_fp);
+        unlink("highscore.txt");
+        Term args[1] = { (Term)old_s };
+        save_high_score_run(e, args, w);
+        return (Term)old_s;
+      }
+      fclose(old_fp);
+    }
+    return (Term)0;
+  }
+  struct HighScoreRecord rec;
+  if (fread(&rec, sizeof(rec), 1, fp) != 1) {
+    fclose(fp);
+    return (Term)0;
+  }
+  fclose(fp);
+
+  if (rec.magic != BSNK_MAGIC || rec.version != 1) {
+    return (Term)0;
+  }
+  uint32_t score = rec.masked_score ^ BSNK_MASK;
+  if (rec.checksum != bsnk_checksum(score)) {
+    return (Term)0;
+  }
+  return (Term)score;
 }
 
 static void __attribute__((constructor)) term_eff_register(void) {

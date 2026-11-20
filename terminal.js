@@ -58,13 +58,39 @@ function term_poll_key() {
   return 0;
 }
 
+const BSNK_MAGIC = 0x4B4E5342;
+const BSNK_MASK = 0x534E414B;
+const BSNK_SALT = 0x1337BEEF;
+
+function bsnk_checksum(score) {
+  return ((score ^ 0xA5A5A5A5) + BSNK_SALT) >>> 0;
+}
+
 function load_high_score() {
   try {
     const fs = require("fs");
-    if (fs.existsSync("highscore.txt")) {
+    if (fs.existsSync("highscore.bin")) {
+      const buf = fs.readFileSync("highscore.bin");
+      if (buf.length === 16) {
+        const magic = buf.readUInt32LE(0);
+        const version = buf.readUInt16LE(4);
+        if (magic === BSNK_MAGIC && version === 1) {
+          const maskedScore = buf.readUInt32LE(8);
+          const checksum = buf.readUInt32LE(12);
+          const score = (maskedScore ^ BSNK_MASK) >>> 0;
+          if (checksum === bsnk_checksum(score)) {
+            return score;
+          }
+        }
+      }
+    } else if (fs.existsSync("highscore.txt")) {
       const txt = fs.readFileSync("highscore.txt", "utf8").trim();
       const n = parseInt(txt, 10);
-      if (!isNaN(n) && n >= 0) return n >>> 0;
+      if (!isNaN(n) && n >= 0) {
+        save_high_score(n >>> 0);
+        try { fs.unlinkSync("highscore.txt"); } catch (_) {}
+        return n >>> 0;
+      }
     }
   } catch (e) {}
   return 0;
@@ -72,7 +98,14 @@ function load_high_score() {
 
 function save_high_score(score) {
   try {
-    require("fs").writeFileSync("highscore.txt", `${score}\n`);
+    const fs = require("fs");
+    const buf = Buffer.alloc(16);
+    buf.writeUInt32LE(BSNK_MAGIC, 0);
+    buf.writeUInt16LE(1, 4);
+    buf.writeUInt16LE(0, 6);
+    buf.writeUInt32LE((score ^ BSNK_MASK) >>> 0, 8);
+    buf.writeUInt32LE(bsnk_checksum(score), 12);
+    fs.writeFileSync("highscore.bin", buf);
   } catch (e) {}
   return {$: CID(Unit)};
 }

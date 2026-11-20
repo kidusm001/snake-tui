@@ -1,3 +1,4 @@
 snake-tui
 *.o
 highscore.txt
+highscore.bin
