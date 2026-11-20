@@ -245,9 +245,9 @@ def render_grid_par(+w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +ali
 def render_game_over(is_new_high: Bool, score: U32, high_score: U32) -> String:
   match is_new_high:
     case True{}:
-      "\u{1b}[1;32m🎉 NEW HIGH SCORE! 🏆 " ++ U32.show(score) ++ " 🎉\u{1b}[0m\u{1b}[K\n\u{1b}[1;33m[R]\u{1b}[0m Play Again   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;32m🎉 NEW HIGH SCORE! 🏆 " ++ U32.show(score) ++ " 🎉\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Play Again   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case False{}:
-      "\u{1b}[1;31m💀  GAME OVER!  💀\u{1b}[0m\u{1b}[K\n\u{1b}[1;37mFinal Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Play Again   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;31m💀 GAME OVER!\u{1b}[0m   \u{1b}[1;37mScore: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Play Again   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
 
 def render_status(alive: Bool, +score: U32, +high_score: U32) -> String:
   match alive:
@@ -261,7 +261,7 @@ def render_frame(g: GameState, +w_nat: Nat) -> String:
   Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
   header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\u{1b}[K\n" : String}
   border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
-  border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\n" : String}
+  border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
   grid = render_grid_par(w_nat, head, food, body, alive)
   status = render_status(alive, score, high_score)
   (header ++ status) ++ (border_top ++ grid ++ border_bot)
