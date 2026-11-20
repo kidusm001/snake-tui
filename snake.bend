@@ -167,14 +167,14 @@ def new_game(+seed: U32) -> GameState:
 def head_glyph(alive: Bool) -> String:
   match alive:
     case True{}:
-      "🟢"
+      "\u{1b}[38;5;82m██\u{1b}[0m"
     case False{}:
-      "💀"
+      "\u{1b}[1;31m✖✖\u{1b}[0m"
 
 def cell_char_body(is_body: Bool) -> String:
   match is_body:
     case True{}:
-      "🟩"
+      "\u{1b}[38;5;40m▓▓\u{1b}[0m"
     case False{}:
       "  "
 
