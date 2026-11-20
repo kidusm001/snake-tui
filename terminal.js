@@ -156,6 +156,12 @@ function net_prompt_join(port) {
     if (!process.env.BEND_SNAKE_HOST && fs.existsSync("host.txt")) {
       ip = fs.readFileSync("host.txt", "utf8").trim() || "127.0.0.1";
     }
+    if (ip.includes(":")) {
+      const parts = ip.split(":");
+      ip = parts[0];
+      const p = parseInt(parts[1], 10);
+      if (p > 0) port = p;
+    }
     net_close();
     netClient = new net.Socket();
     netClient.connect(port, ip);

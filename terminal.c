@@ -8,6 +8,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <string.h>
 #include <errno.h>
 
@@ -166,11 +168,26 @@ Term net_beacon_tick_run(Env e, Term* f, IoWork* w) {
     baddr.sin_family = AF_INET;
     baddr.sin_port = htons(4243);
 
+    // 1. Universal broadcast
     baddr.sin_addr.s_addr = inet_addr("255.255.255.255");
     sendto(beacon_sock, msg, strlen(msg), 0, (struct sockaddr*)&baddr, sizeof(baddr));
 
+    // 2. Localhost for loopback tests
     baddr.sin_addr.s_addr = inet_addr("127.0.0.1");
     sendto(beacon_sock, msg, strlen(msg), 0, (struct sockaddr*)&baddr, sizeof(baddr));
+
+    // 3. Every active subnet broadcast interface
+    struct ifaddrs* ifaddr = NULL;
+    if (getifaddrs(&ifaddr) == 0) {
+      for (struct ifaddrs* ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+        if (!(ifa->ifa_flags & IFF_BROADCAST) || !ifa->ifa_broadaddr) continue;
+        struct sockaddr_in* broad = (struct sockaddr_in*)ifa->ifa_broadaddr;
+        baddr.sin_addr = broad->sin_addr;
+        sendto(beacon_sock, msg, strlen(msg), 0, (struct sockaddr*)&baddr, sizeof(baddr));
+      }
+      freeifaddrs(ifaddr);
+    }
   }
   return term_pak(CID(Unit), 0);
 }
@@ -206,7 +223,7 @@ Term net_auto_join_run(Env e, Term* f, IoWork* w) {
   char host_ip[64] = {0};
   int found = 0;
 
-  for (int iter = 0; iter < 10; iter++) {
+  for (int iter = 0; iter < 14; iter++) {
     struct pollfd pfd = { .fd = lsock, .events = POLLIN, .revents = 0 };
     int ret = poll(&pfd, 1, 250);
     if (ret > 0 && (pfd.revents & POLLIN)) {
@@ -231,7 +248,7 @@ Term net_auto_join_run(Env e, Term* f, IoWork* w) {
 
   if (!found) {
     write(STDOUT_FILENO, "\x1b[33m⚡ No automatic broadcast room detected yet.\x1b[0m\n\x1b[90mSwitching to direct IP join...\x1b[0m\n\n", 95);
-    usleep(700000);
+    usleep(500000);
     return (Term)0;
   }
 
@@ -250,7 +267,11 @@ Term net_auto_join_run(Env e, Term* f, IoWork* w) {
   tcp_addr.sin_addr = sender_addr.sin_addr;
 
   if (connect(s, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr)) < 0) {
+    char err_msg[128];
+    snprintf(err_msg, sizeof(err_msg), "\x1b[1;31mCould not connect to room at %s:%u (%s)\x1b[0m\n", host_ip, port, strerror(errno));
+    write(STDOUT_FILENO, err_msg, strlen(err_msg));
     close(s);
+    usleep(1200000);
     return (Term)0;
   }
 
@@ -331,48 +352,70 @@ Term net_prompt_join_run(Env e, Term* f, IoWork* w) {
   if (client_sock >= 0) { close(client_sock); client_sock = -1; }
 
   char ip[128] = "127.0.0.1";
+  char last_ip[128] = "127.0.0.1";
+
+  // Check if previous valid host was saved
+  FILE* hfp = fopen("host.txt", "r");
+  if (hfp) {
+    if (fscanf(hfp, "%127s", last_ip) == 1) {
+      char* colon = strchr(last_ip, ':');
+      if (colon) *colon = '\0';
+    }
+    fclose(hfp);
+  }
+
   const char* env_host = getenv("BEND_SNAKE_HOST");
   if (env_host && strlen(env_host) > 0) {
     strncpy(ip, env_host, sizeof(ip) - 1);
   } else {
-    FILE* hfp = fopen("host.txt", "r");
-    if (hfp) {
-      if (fscanf(hfp, "%127s", ip) != 1) {
-        strncpy(ip, "127.0.0.1", sizeof(ip) - 1);
-      }
-      fclose(hfp);
-    } else {
-      printf("\x1b[2J\x1b[H\x1b[1;36m🔗 JOIN LAN GAME\x1b[0m\n\n");
-      printf("\x1b[1;37mEnter Host IP address (or press Enter for 127.0.0.1): \x1b[0m");
-      fflush(stdout);
+    printf("\x1b[2J\x1b[H\x1b[1;36m🔗 JOIN LAN GAME\x1b[0m\n\n");
+    printf("\x1b[1;37mEnter Host IP address \x1b[33m[default: %s]\x1b[1;37m (or press Enter to use default):\x1b[0m\n> ", last_ip);
+    fflush(stdout);
 
-      if (raw_mode_set) {
-        tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
-      }
-      char input_buf[128] = {0};
-      if (fgets(input_buf, sizeof(input_buf), stdin)) {
-        char* nl = strchr(input_buf, '\n');
-        if (nl) *nl = 0;
-        char* cr = strchr(input_buf, '\r');
-        if (cr) *cr = 0;
-        if (strlen(input_buf) > 0) {
-          strncpy(ip, input_buf, sizeof(ip) - 1);
-          FILE* save_fp = fopen("host.txt", "w");
-          if (save_fp) {
-            fprintf(save_fp, "%s\n", ip);
-            fclose(save_fp);
-          }
-        }
-      }
-      if (raw_mode_set) {
-        struct termios raw = orig_termios;
-        raw.c_lflag &= ~(ECHO | ICANON | ISIG);
-        raw.c_iflag &= ~(IXON | ICRNL);
-        raw.c_cc[VMIN] = 0;
-        raw.c_cc[VTIME] = 0;
-        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
-      }
+    if (raw_mode_set) {
+      tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
     }
+
+    char input_buf[128] = {0};
+    if (fgets(input_buf, sizeof(input_buf), stdin)) {
+      char* nl = strchr(input_buf, '\n');
+      if (nl) *nl = 0;
+      char* cr = strchr(input_buf, '\r');
+      if (cr) *cr = 0;
+
+      char* p = input_buf;
+      while (*p == ' ' || *p == '\t') p++;
+
+      if (strlen(p) > 0) {
+        char* colon = strchr(p, ':');
+        if (colon) {
+          *colon = '\0';
+          uint32_t user_port = (uint32_t)atoi(colon + 1);
+          if (user_port > 0) port = user_port;
+        }
+        strncpy(ip, p, sizeof(ip) - 1);
+      } else {
+        strncpy(ip, last_ip, sizeof(ip) - 1);
+      }
+    } else {
+      strncpy(ip, last_ip, sizeof(ip) - 1);
+    }
+
+    if (raw_mode_set) {
+      struct termios raw = orig_termios;
+      raw.c_lflag &= ~(ECHO | ICANON | ISIG);
+      raw.c_iflag &= ~(IXON | ICRNL);
+      raw.c_cc[VMIN] = 0;
+      raw.c_cc[VTIME] = 0;
+      tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+    }
+  }
+
+  char* extra_colon = strchr(ip, ':');
+  if (extra_colon) {
+    *extra_colon = '\0';
+    uint32_t user_port = (uint32_t)atoi(extra_colon + 1);
+    if (user_port > 0) port = user_port;
   }
 
   printf("\x1b[KConnecting to %s:%u...\n", ip, port);
@@ -386,13 +429,25 @@ Term net_prompt_join_run(Env e, Term* f, IoWork* w) {
   addr.sin_family = AF_INET;
   addr.sin_port = htons((uint16_t)port);
   if (inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
+    printf("\x1b[1;31mInvalid IP address format: '%s'\x1b[0m\n", ip);
+    fflush(stdout);
     close(s);
+    usleep(1500000);
     return (Term)0;
   }
 
   if (connect(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    printf("\x1b[1;31mCould not connect to %s:%u (%s)\x1b[0m\n\x1b[90mMake sure the host is currently on the 'Host' screen.\x1b[0m\n", ip, port, strerror(errno));
+    fflush(stdout);
     close(s);
+    usleep(2000000);
     return (Term)0;
+  }
+
+  FILE* save_fp = fopen("host.txt", "w");
+  if (save_fp) {
+    fprintf(save_fp, "%s\n", ip);
+    fclose(save_fp);
   }
 
   int flags = fcntl(s, F_GETFL, 0);
