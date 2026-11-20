@@ -113,3 +113,29 @@ law is_snake_cell_body:
 
 law step_inactive_game_stays_dead:
   {Snake.step_game(Snake.Game{Snake.Pos{0, 0}, Nil{}, Snake.Right{}, Snake.Pos{5, 5}, 10, 20, False{}, 123}, 0, 24, 16) == Snake.Game{Snake.Pos{0, 0}, Nil{}, Snake.Right{}, Snake.Pos{5, 5}, 10, 20, False{}, 123} : Snake.GameState}
+
+law turn_coop_idle_preserves:
+  for d: Snake.Dir
+  {Snake.turn_coop(d, 0, 0) == d : Snake.Dir}
+
+law turn_coop_p1_steers:
+  {Snake.turn_coop(Snake.Right{}, 119, 0) == Snake.Up{} : Snake.Dir}
+
+law turn_coop_p2_steers:
+  {Snake.turn_coop(Snake.Right{}, 0, 119) == Snake.Up{} : Snake.Dir}
+
+law versus_outcome_active:
+  {Snake.versus_outcome(False{}, False{}) == Snake.Active{} : Snake.VersusWinner}
+
+law versus_outcome_p1win:
+  {Snake.versus_outcome(False{}, True{}) == Snake.P1Win{} : Snake.VersusWinner}
+
+law versus_outcome_p2win:
+  {Snake.versus_outcome(True{}, False{}) == Snake.P2Win{} : Snake.VersusWinner}
+
+law versus_outcome_draw:
+  {Snake.versus_outcome(True{}, True{}) == Snake.Draw{} : Snake.VersusWinner}
+
+law versus_new_game_active:
+  for seed: U32
+  {Snake.is_versus_over(Snake.new_versus_game(seed)) == False{} : Bool}

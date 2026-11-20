@@ -111,3 +111,27 @@ def Laws.is_snake_cell_body():
 
 def Laws.step_inactive_game_stays_dead():
   {==}
+
+def Laws.turn_coop_idle_preserves(d):
+  {==}
+
+def Laws.turn_coop_p1_steers():
+  {==}
+
+def Laws.turn_coop_p2_steers():
+  {==}
+
+def Laws.versus_outcome_active():
+  {==}
+
+def Laws.versus_outcome_p1win():
+  {==}
+
+def Laws.versus_outcome_p2win():
+  {==}
+
+def Laws.versus_outcome_draw():
+  {==}
+
+def Laws.versus_new_game_active(seed):
+  {==}

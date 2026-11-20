@@ -3,6 +3,11 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <errno.h>
 
 static struct termios orig_termios;
 static int raw_mode_set = 0;
@@ -42,10 +47,10 @@ Term term_poll_key_run(Env e, Term* f, IoWork* w) {
     unsigned char seq[2] = {0, 0};
     if (read(STDIN_FILENO, &seq[0], 1) > 0 && read(STDIN_FILENO, &seq[1], 1) > 0) {
       if (seq[0] == '[') {
-        if (seq[1] == 'A') return (Term)(uint32_t)'w';
-        if (seq[1] == 'B') return (Term)(uint32_t)'s';
-        if (seq[1] == 'C') return (Term)(uint32_t)'d';
-        if (seq[1] == 'D') return (Term)(uint32_t)'a';
+        if (seq[1] == 'A') return (Term)(uint32_t)200; // Arrow Up
+        if (seq[1] == 'B') return (Term)(uint32_t)201; // Arrow Down
+        if (seq[1] == 'C') return (Term)(uint32_t)203; // Arrow Right
+        if (seq[1] == 'D') return (Term)(uint32_t)202; // Arrow Left
       }
     }
     return (Term)(uint32_t)'q';
@@ -122,10 +127,197 @@ Term load_high_score_run(Env e, Term* f, IoWork* w) {
   return (Term)score;
 }
 
+static int server_sock = -1;
+static int client_sock = -1;
+
+static void get_lan_ip(char* buf, size_t buflen) {
+  int sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock >= 0) {
+    struct sockaddr_in serv;
+    memset(&serv, 0, sizeof(serv));
+    serv.sin_family = AF_INET;
+    serv.sin_addr.s_addr = inet_addr("1.1.1.1");
+    serv.sin_port = htons(80);
+    if (connect(sock, (const struct sockaddr*)&serv, sizeof(serv)) == 0) {
+      struct sockaddr_in name;
+      socklen_t namelen = sizeof(name);
+      if (getsockname(sock, (struct sockaddr*)&name, &namelen) == 0) {
+        inet_ntop(AF_INET, &name.sin_addr, buf, buflen);
+        close(sock);
+        return;
+      }
+    }
+    close(sock);
+  }
+  strncpy(buf, "127.0.0.1", buflen);
+}
+
+Term net_listen_run(Env e, Term* f, IoWork* w) {
+  uint32_t port = (uint32_t)f[0];
+  if (server_sock >= 0) { close(server_sock); server_sock = -1; }
+  if (client_sock >= 0) { close(client_sock); client_sock = -1; }
+
+  server_sock = socket(AF_INET, SOCK_STREAM, 0);
+  if (server_sock < 0) return (Term)0;
+
+  int opt = 1;
+  setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+  struct sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin_port = htons((uint16_t)port);
+
+  if (bind(server_sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    close(server_sock);
+    server_sock = -1;
+    return (Term)0;
+  }
+
+  if (listen(server_sock, 1) < 0) {
+    close(server_sock);
+    server_sock = -1;
+    return (Term)0;
+  }
+
+  int flags = fcntl(server_sock, F_GETFL, 0);
+  fcntl(server_sock, F_SETFL, flags | O_NONBLOCK);
+
+  char lan_ip[64] = "127.0.0.1";
+  get_lan_ip(lan_ip, sizeof(lan_ip));
+  printf("\x1b[2J\x1b[H\x1b[1;36m📡 HOSTING ON %s:%u\x1b[0m\n\n\x1b[1;37mWaiting for Player 2 to join on LAN...\x1b[0m\n\x1b[90m(Press [Q] to cancel)\x1b[0m\n", lan_ip, port);
+  fflush(stdout);
+
+  return (Term)1;
+}
+
+Term net_accept_run(Env e, Term* f, IoWork* w) {
+  if (server_sock < 0) return (Term)0;
+  if (client_sock >= 0) return (Term)1;
+
+  struct sockaddr_in caddr;
+  socklen_t clen = sizeof(caddr);
+  int s = accept(server_sock, (struct sockaddr*)&caddr, &clen);
+  if (s < 0) return (Term)0;
+
+  int flags = fcntl(s, F_GETFL, 0);
+  fcntl(s, F_SETFL, flags | O_NONBLOCK);
+  client_sock = s;
+  return (Term)1;
+}
+
+Term net_prompt_join_run(Env e, Term* f, IoWork* w) {
+  uint32_t port = (uint32_t)f[0];
+  if (client_sock >= 0) { close(client_sock); client_sock = -1; }
+
+  char ip[128] = "127.0.0.1";
+  const char* env_host = getenv("BEND_SNAKE_HOST");
+  if (env_host && strlen(env_host) > 0) {
+    strncpy(ip, env_host, sizeof(ip) - 1);
+  } else {
+    FILE* hfp = fopen("host.txt", "r");
+    if (hfp) {
+      if (fscanf(hfp, "%127s", ip) != 1) {
+        strncpy(ip, "127.0.0.1", sizeof(ip) - 1);
+      }
+      fclose(hfp);
+    } else {
+      printf("\x1b[2J\x1b[H\x1b[1;36m🔗 JOIN LAN GAME\x1b[0m\n\n");
+      printf("\x1b[1;37mEnter Host IP address (or press Enter for 127.0.0.1): \x1b[0m");
+      fflush(stdout);
+
+      if (raw_mode_set) {
+        tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+      }
+      char input_buf[128] = {0};
+      if (fgets(input_buf, sizeof(input_buf), stdin)) {
+        char* nl = strchr(input_buf, '\n');
+        if (nl) *nl = 0;
+        char* cr = strchr(input_buf, '\r');
+        if (cr) *cr = 0;
+        if (strlen(input_buf) > 0) {
+          strncpy(ip, input_buf, sizeof(ip) - 1);
+          FILE* save_fp = fopen("host.txt", "w");
+          if (save_fp) {
+            fprintf(save_fp, "%s\n", ip);
+            fclose(save_fp);
+          }
+        }
+      }
+      if (raw_mode_set) {
+        struct termios raw = orig_termios;
+        raw.c_lflag &= ~(ECHO | ICANON | ISIG);
+        raw.c_iflag &= ~(IXON | ICRNL);
+        raw.c_cc[VMIN] = 0;
+        raw.c_cc[VTIME] = 0;
+        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+      }
+    }
+  }
+
+  printf("\x1b[KConnecting to %s:%u...\n", ip, port);
+  fflush(stdout);
+
+  int s = socket(AF_INET, SOCK_STREAM, 0);
+  if (s < 0) return (Term)0;
+
+  struct sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons((uint16_t)port);
+  if (inet_pton(AF_INET, ip, &addr.sin_addr) <= 0) {
+    close(s);
+    return (Term)0;
+  }
+
+  if (connect(s, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    close(s);
+    return (Term)0;
+  }
+
+  int flags = fcntl(s, F_GETFL, 0);
+  fcntl(s, F_SETFL, flags | O_NONBLOCK);
+  client_sock = s;
+  return (Term)1;
+}
+
+Term net_send_key_run(Env e, Term* f, IoWork* w) {
+  uint32_t k = (uint32_t)f[0];
+  if (client_sock >= 0) {
+    send(client_sock, &k, sizeof(k), MSG_NOSIGNAL);
+  }
+  return term_pak(CID(Unit), 0);
+}
+
+Term net_recv_key_run(Env e, Term* f, IoWork* w) {
+  if (client_sock < 0) return (Term)0;
+  uint32_t k = 0;
+  ssize_t n = recv(client_sock, &k, sizeof(k), 0);
+  if (n == sizeof(k)) {
+    return (Term)k;
+  } else if (n == 0) {
+    return (Term)(uint32_t)'q';
+  }
+  return (Term)0;
+}
+
+Term net_close_run(Env e, Term* f, IoWork* w) {
+  if (client_sock >= 0) { close(client_sock); client_sock = -1; }
+  if (server_sock >= 0) { close(server_sock); server_sock = -1; }
+  return term_pak(CID(Unit), 0);
+}
+
 static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(init), term_init_run);
   io_eff(CID(restore), term_restore_run);
   io_eff(CID(poll_key), term_poll_key_run);
   io_eff(CID(load_high_score), load_high_score_run);
   io_eff(CID(save_high_score), save_high_score_run);
+  io_eff(CID(net_listen), net_listen_run);
+  io_eff(CID(net_accept), net_accept_run);
+  io_eff(CID(net_prompt_join), net_prompt_join_run);
+  io_eff(CID(net_send_key), net_send_key_run);
+  io_eff(CID(net_recv_key), net_recv_key_run);
+  io_eff(CID(net_close), net_close_run);
 }

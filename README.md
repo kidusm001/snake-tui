@@ -7,26 +7,42 @@ A classic Snake game built for the terminal using [Bend](https://github.com/High
 ## Features
 
 - **Pure Functional Logic**: The core game mechanics in [`snake.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/snake.bend) are 100% pure, deterministic, and formally verified.
+- **Multiple Game Modes**:
+  - **Solo Classic**: Traditional 1-player high score chase with persistent binary records.
+  - **Co-op Mode (2 Players, 1 Snake)**: Two players steer the same snake cooperatively! Playable over LAN or on the same keyboard.
+  - **Versus Mode (2 Snakes Duel)**: Green Snake (P1) vs Purple Snake (P2) battling for apples in the same arena. Crashing into the opponent or walls results in death! Playable over LAN or on the same keyboard.
+- **LAN Multiplayer Networking**: Built-in peer-to-peer TCP networking with automatic local IP discovery, zero-desync deterministic lockstep input exchange, and manual host IP prompts.
 - **Parallel Grid Rendering**: Utilizes Bend's parallel call primitives (`a b = f(...) g(...)`) in [`snake.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/snake.bend) to render quadrants and rows in parallel across CPU/GPU cores.
 - **Formal Verification (Laws & Proofs)**:
-  - [`LAWS.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/LAWS.bend): Mathematical definitions of game invariants (direction reversal prevention, movement coordinates, out-of-bounds safety, growth mechanics, collision correctness).
+  - [`LAWS.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/LAWS.bend): Mathematical definitions of game invariants (direction reversal prevention, movement coordinates, out-of-bounds safety, growth mechanics, safe food generation, co-op turn steering, versus collision resolution).
   - [`PROOF.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/PROOF.bend): Formal proofs checked by Bend's theorem prover (`bend PROOF.bend` passes with `ALL PROOFS CHECK`).
 - **Persistent High Score Tracking**: Real-time high score updates during gameplay, saved automatically to disk (`highscore.bin`), preserved across sessions, and highlighted with celebratory game-over banners (`🎉 NEW HIGH SCORE! 🏆`).
-- **Textured Scale Snake Graphics**: Reptile-scale shaded body (`▓▓`), bright solid lime head (`██`), red apple (`🍎`), crash indicator (`✖✖`), and neon blue double-line arcade cabinet (`╔═══╗`, `║   ║`, `╚═══╝`).
+- **Textured Scale Snake Graphics**: Reptile-scale shaded body (`▓▓` / `▒▒`), bright solid lime & magenta heads (`██`), red apple (`🍎`), crash indicator (`✖✖`), and neon blue double-line arcade cabinet (`╔═══╗`, `║   ║`, `╚═══╝`).
 - **Low-Latency TUI**: Raw mode terminal driver with ANSI colors, non-blocking keyboard polling, and arrow key escape sequence parsing.
 
 ---
 
-## Controls
+## Game Modes & Controls
 
-| Key | Action |
-|---|---|
-| `W` / `↑` / `K` | Move Up |
-| `S` / `↓` / `J` | Move Down |
-| `A` / `←` / `H` | Move Left |
-| `D` / `→` / `L` | Move Right |
-| `R` | Restart (after game over or during play) |
-| `Q` / `Esc` | Quit game |
+### Main Menu
+Select your mode at launch:
+- `[1]` Solo Classic
+- `[2]` LAN Co-op (HOST)
+- `[3]` LAN Co-op (JOIN)
+- `[4]` LAN Versus (HOST)
+- `[5]` LAN Versus (JOIN)
+- `[6]` Local Co-op (1 Keyboard)
+- `[7]` Local Versus (1 Keyboard)
+- `[Q]` Quit
+
+### In-Game Controls
+- **Solo & LAN Play**: Use `W/A/S/D` or Arrow Keys `↑/←/↓/→` (each player controls their own screen).
+- **Local 2-Player (Same Keyboard)**:
+  - **Player 1**: `W` (Up), `A` (Left), `S` (Down), `D` (Right)
+  - **Player 2**: `↑` (Up), `←` (Left), `↓` (Down), `→` (Right) or `I/J/K/L`
+- **Global**:
+  - `R`: Restart game
+  - `Q` / `Esc`: Quit / Cancel
 
 ---
 

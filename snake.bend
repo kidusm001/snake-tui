@@ -72,17 +72,25 @@ def key_to_dir(+k: U32, +cur: Dir) -> Dir:
   match k:
     case 119:
       turn(cur, Up{})
-    case 107:
+    case 200:
+      turn(cur, Up{})
+    case 105:
       turn(cur, Up{})
     case 115:
       turn(cur, Down{})
-    case 106:
+    case 201:
+      turn(cur, Down{})
+    case 107:
       turn(cur, Down{})
     case 97:
       turn(cur, Left{})
-    case 104:
+    case 202:
+      turn(cur, Left{})
+    case 106:
       turn(cur, Left{})
     case 100:
+      turn(cur, Right{})
+    case 203:
       turn(cur, Right{})
     case 108:
       turn(cur, Right{})
@@ -294,3 +302,275 @@ def render_frame(g: GameState, +w_nat: Nat) -> String:
   grid = render_grid_par(w_nat, head, food, body, alive)
   status = render_status(alive, score, high_score)
   (header ++ status) ++ (border_top ++ grid ++ border_bot)
+
+# Co-op Mode: 2 Players Steering 1 Snake
+def turn_coop(+cur: Dir, +k1: U32, +k2: U32) -> Dir:
+  +d1 = key_to_dir(k1, cur)
+  key_to_dir(k2, d1)
+
+def step_coop(g: GameState, +k1: U32, +k2: U32, +w: U32, +h: U32) -> GameState:
+  Game{+head, +body, +dir, +food, +score, +high_score, alive, +seed} = g
+  match alive:
+    case False{}:
+      Game{head, body, dir, food, score, high_score, False{}, seed}
+    case True{}:
+      +new_dir = turn_coop(dir, k1, k2)
+      +new_head = move_pos(head, new_dir)
+      hit_wall = is_out_of_bounds(new_head, w, h)
+      hit_self = contains_pos(body, new_head)
+      dead = hit_wall || hit_self
+      step_alive(dead, new_head, head, body, new_dir, food, score, high_score, seed, w, h)
+
+def render_coop_status(alive: Bool, +score: U32, +high_score: U32) -> String:
+  match alive:
+    case True{}:
+      "\u{1b}[1;37m🍎 Co-op Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[36m[P1: Host] [P2: Client]\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+    case False{}:
+      is_new = (score >= high_score : U32) && (score > 0 : U32)
+      render_game_over(is_new, score, high_score)
+
+def render_coop_frame(g: GameState, +w_nat: Nat) -> String:
+  Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
+  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE CO-OP (2 PLAYERS, 1 SNAKE)  🐍\u{1b}[0m\u{1b}[K\n" : String}
+  border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
+  border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
+  grid = render_grid_par(w_nat, head, food, body, alive)
+  status = render_coop_status(alive, score, high_score)
+  (header ++ status) ++ (border_top ++ grid ++ border_bot)
+
+# Versus Mode: 2 Snakes Duel
+type VersusWinner is Data:
+  Active{}
+  P1Win{}
+  P2Win{}
+  Draw{}
+
+type VersusState is Data:
+  VersusGame{
+    head1: Pos,
+    body1: +List<Pos>,
+    dir1: Dir,
+    alive1: Bool,
+    score1: U32,
+    head2: Pos,
+    body2: +List<Pos>,
+    dir2: Dir,
+    alive2: Bool,
+    score2: U32,
+    food: Pos,
+    winner: VersusWinner,
+    seed: U32
+  }
+
+def new_versus_game(+seed: U32) -> VersusState:
+  +h1 = {Pos{5, 8} : Pos}
+  +b1 = {[Pos{4, 8}, Pos{3, 8}] : +List<Pos>}
+  +h2 = {Pos{19, 8} : Pos}
+  +b2 = {[Pos{20, 8}, Pos{21, 8}] : +List<Pos>}
+  VersusGame{h1, b1, Right{}, True{}, 0, h2, b2, Left{}, True{}, 0, Pos{12, 8}, Active{}, seed}
+
+def get_versus_seed(vg: VersusState) -> U32:
+  VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, seed} = vg
+  seed
+
+def is_versus_over(vg: VersusState) -> Bool:
+  VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, winner, +seed} = vg
+  match winner:
+    case Active{}:
+      False{}
+    case _:
+      True{}
+
+def versus_outcome(c1: Bool, c2: Bool) -> VersusWinner:
+  match c1 c2:
+    case True{} True{}:
+      Draw{}
+    case True{} False{}:
+      P2Win{}
+    case False{} True{}:
+      P1Win{}
+    case False{} False{}:
+      Active{}
+
+def is_in_snakes(+p: Pos, +h1: Pos, +b1: +List<Pos>, +h2: Pos, +b2: +List<Pos>) -> Bool:
+  is_snake_cell(p, h1, b1) || is_snake_cell(p, h2, b2)
+
+def pick_versus_cand(+cand: FoodSeed, next_food: FoodSeed, +h1: Pos, +b1: +List<Pos>, +h2: Pos, +b2: +List<Pos>) -> FoodSeed:
+  FoodSeed{+pos, +seed} = cand
+  hit = is_in_snakes(pos, h1, b1, h2, b2)
+  pick_food(hit, cand, next_food)
+
+def gen_versus_food_safe(fuel: Nat, +seed: U32, +h1: Pos, +b1: +List<Pos>, +h2: Pos, +b2: +List<Pos>, +w: U32, +h: U32) -> FoodSeed:
+  match fuel:
+    case 0n:
+      FoodSeed{Pos{12, 8}, seed}
+    case 1n+p:
+      +cand = gen_food_candidate(seed, w, h)
+      +s_next = next_seed(next_seed(seed))
+      next_food = gen_versus_food_safe(p, s_next, h1, b1, h2, b2, w, h)
+      pick_versus_cand(cand, next_food, h1, b1, h2, b2)
+
+def make_versus_ate1_game(fs: FoodSeed, +nh1: Pos, new_b1: +List<Pos>, +nd1: Dir, +new_s1: U32, +nh2: Pos, new_b2: +List<Pos>, +nd2: Dir, +s2: U32) -> VersusState:
+  FoodSeed{new_food, new_seed} = fs
+  VersusGame{nh1, new_b1, nd1, True{}, new_s1, nh2, new_b2, nd2, True{}, s2, new_food, Active{}, new_seed}
+
+def make_versus_ate2_game(fs: FoodSeed, +nh1: Pos, new_b1: +List<Pos>, +nd1: Dir, +s1: U32, +nh2: Pos, new_b2: +List<Pos>, +nd2: Dir, +new_s2: U32) -> VersusState:
+  FoodSeed{new_food, new_seed} = fs
+  VersusGame{nh1, new_b1, nd1, True{}, s1, nh2, new_b2, nd2, True{}, new_s2, new_food, Active{}, new_seed}
+
+def versus_ate_step(ate1: Bool, ate2: Bool, +nh1: Pos, head1: Pos, body1: +List<Pos>, +nd1: Dir, +s1: U32, +nh2: Pos, head2: Pos, body2: +List<Pos>, +nd2: Dir, +s2: U32, +food: Pos, +seed: U32, +w: U32, +h: U32) -> VersusState:
+  match ate1:
+    case True{}:
+      +new_b1 = grow(head1, body1)
+      +new_s1 = (s1 + 10 : U32)
+      +new_b2 = grow(head2, drop_last(body2))
+      safe_food = gen_versus_food_safe(32n, seed, nh1, new_b1, nh2, new_b2, w, h)
+      make_versus_ate1_game(safe_food, nh1, new_b1, nd1, new_s1, nh2, new_b2, nd2, s2)
+    case False{}:
+      match ate2:
+        case True{}:
+          +new_b1 = grow(head1, drop_last(body1))
+          +new_b2 = grow(head2, body2)
+          +new_s2 = (s2 + 10 : U32)
+          safe_food = gen_versus_food_safe(32n, seed, nh1, new_b1, nh2, new_b2, w, h)
+          make_versus_ate2_game(safe_food, nh1, new_b1, nd1, s1, nh2, new_b2, nd2, new_s2)
+        case False{}:
+          new_b1 = grow(head1, drop_last(body1))
+          new_b2 = grow(head2, drop_last(body2))
+          VersusGame{nh1, new_b1, nd1, True{}, s1, nh2, new_b2, nd2, True{}, s2, food, Active{}, seed}
+
+def versus_resolve_step(outcome: VersusWinner, +nh1: Pos, head1: Pos, body1: +List<Pos>, +nd1: Dir, +s1: U32, +nh2: Pos, head2: Pos, body2: +List<Pos>, +nd2: Dir, +s2: U32, +food: Pos, +seed: U32, +w: U32, +h: U32) -> VersusState:
+  match outcome:
+    case Active{}:
+      ate1 = pos_eq(nh1, food)
+      ate2 = pos_eq(nh2, food)
+      versus_ate_step(ate1, ate2, nh1, head1, body1, nd1, s1, nh2, head2, body2, nd2, s2, food, seed, w, h)
+    case P1Win{}:
+      new_b1 = grow(head1, drop_last(body1))
+      VersusGame{nh1, new_b1, nd1, True{}, s1, head2, body2, nd2, False{}, s2, food, P1Win{}, seed}
+    case P2Win{}:
+      new_b2 = grow(head2, drop_last(body2))
+      VersusGame{head1, body1, nd1, False{}, s1, nh2, new_b2, nd2, True{}, s2, food, P2Win{}, seed}
+    case Draw{}:
+      VersusGame{head1, body1, nd1, False{}, s1, head2, body2, nd2, False{}, s2, food, Draw{}, seed}
+
+def step_versus(vg: VersusState, +k1: U32, +k2: U32, +w: U32, +h: U32) -> VersusState:
+  VersusGame{+head1, +body1, +dir1, alive1, +score1, +head2, +body2, +dir2, alive2, +score2, +food, winner, +seed} = vg
+  match winner:
+    case Active{}:
+      +nd1 = key_to_dir(k1, dir1)
+      +nd2 = key_to_dir(k2, dir2)
+      +nh1 = move_pos(head1, nd1)
+      +nh2 = move_pos(head2, nd2)
+      w1 = is_out_of_bounds(nh1, w, h)
+      s_self1 = contains_pos(body1, nh1)
+      hit_b2 = contains_pos(body2, nh1)
+      +head_on = pos_eq(nh1, nh2)
+      hit_h2 = pos_eq(nh1, head2)
+      crash1 = w1 || s_self1 || hit_b2 || head_on || hit_h2
+      w2 = is_out_of_bounds(nh2, w, h)
+      s_self2 = contains_pos(body2, nh2)
+      hit_b1 = contains_pos(body1, nh2)
+      hit_h1 = pos_eq(nh2, head1)
+      crash2 = w2 || s_self2 || hit_b1 || head_on || hit_h1
+      outcome = versus_outcome(crash1, crash2)
+      versus_resolve_step(outcome, nh1, head1, body1, nd1, score1, nh2, head2, body2, nd2, score2, food, seed, w, h)
+    case _:
+      vg
+
+def p2_head_glyph(alive: Bool) -> String:
+  match alive:
+    case True{}:
+      "\u{1b}[38;5;201m██\u{1b}[0m"
+    case False{}:
+      "\u{1b}[1;31m✖✖\u{1b}[0m"
+
+def versus_char_empty() -> String:
+  "  "
+
+def versus_char_food(is_f: Bool) -> String:
+  match is_f:
+    case True{}:
+      "🍎"
+    case False{}:
+      versus_char_empty()
+
+def versus_char_b2(is_b2: Bool, is_f: Bool) -> String:
+  match is_b2:
+    case True{}:
+      "\u{1b}[38;5;171m▒▒\u{1b}[0m"
+    case False{}:
+      versus_char_food(is_f)
+
+def versus_char_b1(is_b1: Bool, is_b2: Bool, is_f: Bool) -> String:
+  match is_b1:
+    case True{}:
+      "\u{1b}[38;5;40m▓▓\u{1b}[0m"
+    case False{}:
+      versus_char_b2(is_b2, is_f)
+
+def versus_char_h2(is_h2: Bool, is_b1: Bool, is_b2: Bool, is_f: Bool, a2: Bool) -> String:
+  match is_h2:
+    case True{}:
+      p2_head_glyph(a2)
+    case False{}:
+      versus_char_b1(is_b1, is_b2, is_f)
+
+def versus_char_h1(is_h1: Bool, is_h2: Bool, is_b1: Bool, is_b2: Bool, is_f: Bool, a1: Bool, a2: Bool) -> String:
+  match is_h1:
+    case True{}:
+      head_glyph(a1)
+    case False{}:
+      versus_char_h2(is_h2, is_b1, is_b2, is_f, a2)
+
+def versus_cell_char(+p: Pos, +h1: Pos, +b1: +List<Pos>, alive1: Bool, +h2: Pos, +b2: +List<Pos>, alive2: Bool, +food: Pos) -> String:
+  is_h1 = pos_eq(p, h1)
+  is_h2 = pos_eq(p, h2)
+  is_b1 = contains_pos(b1, p)
+  is_b2 = contains_pos(b2, p)
+  is_f = pos_eq(p, food)
+  versus_char_h1(is_h1, is_h2, is_b1, is_b2, is_f, alive1, alive2)
+
+def render_versus_cells(fuel: Nat, +x: U32, +y: U32, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
+  match fuel:
+    case 0n:
+      ""
+    case 1n+p:
+      c = versus_cell_char(Pos{x, y}, h1, b1, a1, h2, b2, a2, food)
+      c ++ render_versus_cells(p, (x + 1 : U32), y, h1, b1, a1, h2, b2, a2, food)
+
+def render_versus_row(+y: U32, +w_nat: Nat, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
+  "\u{1b}[38;5;39m║\u{1b}[0m" ++ render_versus_cells(w_nat, 0, y, h1, b1, a1, h2, b2, a2, food) ++ "\u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+
+def render_versus_quad(+y: U32, +w_nat: Nat, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
+  r0 r1 = render_versus_row(y, w_nat, h1, b1, a1, h2, b2, a2, food) render_versus_row((y + 1 : U32), w_nat, h1, b1, a1, h2, b2, a2, food)
+  r2 r3 = render_versus_row((y + 2 : U32), w_nat, h1, b1, a1, h2, b2, a2, food) render_versus_row((y + 3 : U32), w_nat, h1, b1, a1, h2, b2, a2, food)
+  (r0 ++ r1) ++ (r2 ++ r3)
+
+def render_versus_grid_par(+w_nat: Nat, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
+  q0 q1 = render_versus_quad(0, w_nat, h1, b1, a1, h2, b2, a2, food) render_versus_quad(4, w_nat, h1, b1, a1, h2, b2, a2, food)
+  q2 q3 = render_versus_quad(8, w_nat, h1, b1, a1, h2, b2, a2, food) render_versus_quad(12, w_nat, h1, b1, a1, h2, b2, a2, food)
+  (q0 ++ q1) ++ (q2 ++ q3)
+
+def render_versus_status(winner: VersusWinner, +s1: U32, +s2: U32) -> String:
+  match winner:
+    case Active{}:
+      "\u{1b}[1;32m🍏 P1: \u{1b}[1;37m" ++ U32.show(s1) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;35m🍇 P2: \u{1b}[1;37m" ++ U32.show(s2) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[37mDuel for Apples!\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+    case P1Win{}:
+      "\u{1b}[1;32m🎉 PLAYER 1 (GREEN) WINS! 🏆\u{1b}[0m  P1: " ++ U32.show(s1) ++ " vs P2: " ++ U32.show(s2) ++ "   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Play Again  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+    case P2Win{}:
+      "\u{1b}[1;35m🎉 PLAYER 2 (PURPLE) WINS! 🏆\u{1b}[0m  P2: " ++ U32.show(s2) ++ " vs P1: " ++ U32.show(s1) ++ "   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Play Again  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+    case Draw{}:
+      "\u{1b}[1;31m⚔️ MUTUAL CRASH - DRAW! ⚔️\u{1b}[0m  Final: " ++ U32.show(s1) ++ " - " ++ U32.show(s2) ++ "   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Play Again  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+
+def render_versus_frame(vg: VersusState, +w_nat: Nat) -> String:
+  VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, +seed} = vg
+  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE VERSUS (2 SNAKES DUEL)  🐍\u{1b}[0m\u{1b}[K\n" : String}
+  border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
+  border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
+  grid = render_versus_grid_par(w_nat, h1, b1, a1, h2, b2, a2, food)
+  status = render_versus_status(winner, s1, s2)
+  (header ++ status) ++ (border_top ++ grid ++ border_bot)
+
+def render_menu(lan_ip: String) -> String:
+  "\u{1b}[H\u{1b}[2J\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\n\u{1b}[38;5;39m╔════════════════════════════════════════════════════════╗\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m            \u{1b}[1;37mCHOOSE GAME MODE & MULTIPLAYER\u{1b}[0m              \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m╠════════════════════════════════════════════════════════╣\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m                                                        \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;32m[1]\u{1b}[0m \u{1b}[1;37mSolo Classic\u{1b}[0m      (1 Player high score chase)       \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m                                                        \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;36m[2]\u{1b}[0m \u{1b}[1;37mLAN Co-op\u{1b}[0m         \u{1b}[33mHOST\u{1b}[0m (2 players share 1 snake)    \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;36m[3]\u{1b}[0m \u{1b}[1;37mLAN Co-op\u{1b}[0m         \u{1b}[35mJOIN\u{1b}[0m (2 players share 1 snake)    \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m                                                        \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;35m[4]\u{1b}[0m \u{1b}[1;37mLAN Versus\u{1b}[0m        \u{1b}[33mHOST\u{1b}[0m (2 snakes battle duel)       \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;35m[5]\u{1b}[0m \u{1b}[1;37mLAN Versus\u{1b}[0m        \u{1b}[35mJOIN\u{1b}[0m (2 snakes battle duel)       \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m                                                        \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[6]\u{1b}[0m \u{1b}[1;37mLocal Co-op\u{1b}[0m       (WASD + Arrows, 1 keyboard)       \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[7]\u{1b}[0m \u{1b}[1;37mLocal Versus\u{1b}[0m      (WASD + Arrows, 1 keyboard)       \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m                                                        \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;31m[Q]\u{1b}[0m Quit Game                                         \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m╠════════════════════════════════════════════════════════╣\u{1b}[0m\n\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[90mYour LAN IP:\u{1b}[0m \u{1b}[1;32m" ++ lan_ip ++ "\u{1b}[0m (Port: 4242)               \u{1b}[38;5;39m║\u{1b}[0m\n\u{1b}[38;5;39m╚════════════════════════════════════════════════════════╝\u{1b}[0m\n\u{1b}[1;37mSelect an option [1-7, Q]: \u{1b}[0m"

@@ -9,10 +9,10 @@ function attachListener() {
       while (i < chunk.length) {
         if (chunk[i] === 27 && i + 2 < chunk.length && chunk[i+1] === 91) {
           const code = chunk[i+2];
-          if (code === 65) keyQueue.push(119);      // Up -> 'w'
-          else if (code === 66) keyQueue.push(115); // Down -> 's'
-          else if (code === 67) keyQueue.push(100); // Right -> 'd'
-          else if (code === 68) keyQueue.push(97);  // Left -> 'a'
+          if (code === 65) keyQueue.push(200);      // Up -> 200
+          else if (code === 66) keyQueue.push(201); // Down -> 201
+          else if (code === 67) keyQueue.push(203); // Right -> 203
+          else if (code === 68) keyQueue.push(202); // Left -> 202
           i += 3;
         } else if (chunk[i] === 27) {
           keyQueue.push(113); // Escape -> 'q'
@@ -115,3 +115,95 @@ io_eff(CID(restore), term_restore);
 io_eff(CID(poll_key), term_poll_key);
 io_eff(CID(load_high_score), load_high_score);
 io_eff(CID(save_high_score), save_high_score);
+
+let netServer = null;
+let netClient = null;
+let netKeyQueue = [];
+
+function net_listen(port) {
+  try {
+    const net = require("net");
+    net_close();
+    netServer = net.createServer((socket) => {
+      netClient = socket;
+      socket.on("data", (chunk) => {
+        let offset = 0;
+        while (offset + 4 <= chunk.length) {
+          netKeyQueue.push(chunk.readUInt32LE(offset));
+          offset += 4;
+        }
+      });
+      socket.on("close", () => {
+        netKeyQueue.push(113);
+      });
+    });
+    netServer.listen(port, "0.0.0.0");
+    return 1;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function net_accept() {
+  return netClient ? 1 : 0;
+}
+
+function net_prompt_join(port) {
+  try {
+    const net = require("net");
+    const fs = require("fs");
+    let ip = process.env.BEND_SNAKE_HOST || "127.0.0.1";
+    if (!process.env.BEND_SNAKE_HOST && fs.existsSync("host.txt")) {
+      ip = fs.readFileSync("host.txt", "utf8").trim() || "127.0.0.1";
+    }
+    net_close();
+    netClient = new net.Socket();
+    netClient.connect(port, ip);
+    netClient.on("data", (chunk) => {
+      let offset = 0;
+      while (offset + 4 <= chunk.length) {
+        netKeyQueue.push(chunk.readUInt32LE(offset));
+        offset += 4;
+      }
+    });
+    netClient.on("close", () => {
+      netKeyQueue.push(113);
+    });
+    return 1;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function net_send_key(k) {
+  try {
+    if (netClient && !netClient.destroyed) {
+      const buf = Buffer.alloc(4);
+      buf.writeUInt32LE(k >>> 0, 0);
+      netClient.write(buf);
+    }
+  } catch (e) {}
+  return {$: CID(Unit)};
+}
+
+function net_recv_key() {
+  if (netKeyQueue.length > 0) {
+    return netKeyQueue.shift() >>> 0;
+  }
+  return 0;
+}
+
+function net_close() {
+  try {
+    if (netClient) { netClient.destroy(); netClient = null; }
+    if (netServer) { netServer.close(); netServer = null; }
+  } catch (e) {}
+  return {$: CID(Unit)};
+}
+
+io_eff(CID(net_listen), net_listen);
+io_eff(CID(net_accept), net_accept);
+io_eff(CID(net_prompt_join), net_prompt_join);
+io_eff(CID(net_send_key), net_send_key);
+io_eff(CID(net_recv_key), net_recv_key);
+io_eff(CID(net_close), net_close);
