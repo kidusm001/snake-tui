@@ -473,5 +473,5 @@ def filter_p2_key(+k: U32) -> U32:
 @unsafe def main() -> IO(Unit):
   do IO<Unit>:
     Term.init()
-    IO.write(Snake.render_menu("Local LAN / 127.0.0.1"))
+    IO.write(Snake.render_menu())
     menu_loop(100000n)
