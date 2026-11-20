@@ -1,0 +1,40 @@
+name: CI & Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Verify & Build Snake TUI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Bend
+        run: |
+          curl -fsSL https://bend-lang.com/install.sh | sh
+          echo "$HOME/.bend/bin" >> $GITHUB_PATH
+
+      - name: Check Bend Version
+        run: bend version
+
+      - name: Verify Mathematical Proofs
+        run: bend PROOF.bend
+
+      - name: Build Native Binary
+        run: bend main.bend -o snake-tui
+
+      - name: Smoke Test Binary
+        run: printf "q" | ./snake-tui
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: snake-tui-linux-x64
+          path: snake-tui
+          if-no-files-found: error
