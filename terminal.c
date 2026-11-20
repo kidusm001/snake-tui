@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <time.h>
 #include <string.h>
 #include <errno.h>
 
@@ -134,6 +135,7 @@ Term load_high_score_run(Env e, Term* f, IoWork* w) {
 static int server_sock = -1;
 static int client_sock = -1;
 static int beacon_sock = -1;
+static uint32_t active_lan_seed = 424242;
 
 static void get_network_ips(char* lan_ip, size_t lan_len, char* mesh_ip, size_t mesh_len) {
   strncpy(lan_ip, "127.0.0.1", lan_len);
@@ -171,7 +173,7 @@ Term net_beacon_tick_run(Env e, Term* f, IoWork* w) {
   uint32_t mode = (uint32_t)f[0];
   if (beacon_sock >= 0) {
     char msg[64];
-    snprintf(msg, sizeof(msg), "BSNK_ROOM:%u", mode);
+    snprintf(msg, sizeof(msg), "BSNK_ROOM:%u:%u", mode, active_lan_seed);
 
     struct sockaddr_in baddr;
     memset(&baddr, 0, sizeof(baddr));
@@ -245,6 +247,10 @@ Term net_auto_join_run(Env e, Term* f, IoWork* w) {
         if (strncmp(buf, "BSNK_ROOM:", 10) == 0) {
           uint32_t r_mode = (uint32_t)atoi(buf + 10);
           if (r_mode == target_mode || target_mode == 0) {
+            char* s_seed = strchr(buf + 10, ':');
+            if (s_seed) {
+              active_lan_seed = (uint32_t)strtoul(s_seed + 1, NULL, 10);
+            }
             inet_ntop(AF_INET, &sender_addr.sin_addr, host_ip, sizeof(host_ip));
             found = 1;
             break;
@@ -334,6 +340,9 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
   int flags = fcntl(server_sock, F_GETFL, 0);
   fcntl(server_sock, F_SETFL, flags | O_NONBLOCK);
 
+  active_lan_seed = ((uint32_t)time(NULL) ^ ((uint32_t)getpid() << 16) ^ (uint32_t)rand()) & 0x7FFFFFFFu;
+  if (active_lan_seed == 0) active_lan_seed = 1337;
+
   char lan_ip[64] = "127.0.0.1";
   char mesh_ip[64] = "";
   get_network_ips(lan_ip, sizeof(lan_ip), mesh_ip, sizeof(mesh_ip));
@@ -364,6 +373,7 @@ Term net_accept_run(Env e, Term* f, IoWork* w) {
   int flags = fcntl(s, F_GETFL, 0);
   fcntl(s, F_SETFL, flags | O_NONBLOCK);
   client_sock = s;
+  send(client_sock, &active_lan_seed, sizeof(active_lan_seed), MSG_NOSIGNAL);
   return (Term)1;
 }
 
@@ -466,6 +476,14 @@ Term net_prompt_join_run(Env e, Term* f, IoWork* w) {
     return (Term)0;
   }
 
+  struct pollfd pfd = { .fd = s, .events = POLLIN, .revents = 0 };
+  if (poll(&pfd, 1, 1000) > 0) {
+    uint32_t recvd_seed = 0;
+    if (recv(s, &recvd_seed, sizeof(recvd_seed), 0) == sizeof(recvd_seed) && recvd_seed != 0) {
+      active_lan_seed = recvd_seed;
+    }
+  }
+
   FILE* save_fp = fopen("host.txt", "w");
   if (save_fp) {
     fprintf(save_fp, "%s\n", ip);
@@ -498,6 +516,15 @@ Term net_recv_key_run(Env e, Term* f, IoWork* w) {
   return (Term)0;
 }
 
+Term get_random_seed_run(Env e, Term* f, IoWork* w) {
+  if (server_sock >= 0 || client_sock >= 0) {
+    return (Term)active_lan_seed;
+  }
+  uint32_t s = ((uint32_t)time(NULL) ^ ((uint32_t)getpid() << 16) ^ (uint32_t)rand()) & 0x7FFFFFFFu;
+  if (s == 0) s = 1337;
+  return (Term)s;
+}
+
 Term net_close_run(Env e, Term* f, IoWork* w) {
   if (client_sock >= 0) { close(client_sock); client_sock = -1; }
   if (server_sock >= 0) { close(server_sock); server_sock = -1; }
@@ -519,4 +546,5 @@ static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(net_send_key), net_send_key_run);
   io_eff(CID(net_recv_key), net_recv_key_run);
   io_eff(CID(net_close), net_close_run);
+  io_eff(CID(get_random_seed), get_random_seed_run);
 }

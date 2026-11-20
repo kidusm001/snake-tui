@@ -334,9 +334,10 @@ def filter_p2_key(+k: U32) -> U32:
         IO.write(frame)
         coop_host_loop(1000000n, g)
     case 4:
-      +vg : Snake.VersusState = Snake.new_versus_game(424242)
-      frame : String = Snake.render_versus_frame(vg, 24n)
       do IO<Unit>:
+        +seed : U32 <- Term.get_random_seed()
+        +vg : Snake.VersusState = Snake.new_versus_game(seed)
+        frame : String = Snake.render_versus_frame(vg, 24n)
         IO.write(frame)
         versus_host_loop(1000000n, vg)
     case _:
@@ -400,9 +401,10 @@ def filter_p2_key(+k: U32) -> U32:
 @unsafe def join_versus_step(is_ok: Bool) -> IO(Unit):
   match is_ok:
     case True{}:
-      +vg : Snake.VersusState = Snake.new_versus_game(424242)
-      frame : String = Snake.render_versus_frame(vg, 24n)
       do IO<Unit>:
+        +seed : U32 <- Term.get_random_seed()
+        +vg : Snake.VersusState = Snake.new_versus_game(seed)
+        frame : String = Snake.render_versus_frame(vg, 24n)
         IO.write(frame)
         versus_join_loop(1000000n, vg)
     case False{}:
@@ -461,7 +463,8 @@ def filter_p2_key(+k: U32) -> U32:
     case 55:
       # [7] Local Versus
       do IO<Unit>:
-        +vg : Snake.VersusState = Snake.new_versus_game(54321)
+        +seed : U32 <- Term.get_random_seed()
+        +vg : Snake.VersusState = Snake.new_versus_game(seed)
         frame : String = Snake.render_versus_frame(vg, 24n)
         IO.write(frame)
         versus_local_loop(1000000n, vg)

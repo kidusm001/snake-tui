@@ -363,11 +363,23 @@ type VersusState is Data:
   }
 
 def new_versus_game(+seed: U32) -> VersusState:
-  +h1 = {Pos{5, 8} : Pos}
-  +b1 = {[Pos{4, 8}, Pos{3, 8}] : +List<Pos>}
-  +h2 = {Pos{19, 8} : Pos}
-  +b2 = {[Pos{20, 8}, Pos{21, 8}] : +List<Pos>}
-  VersusGame{h1, b1, Right{}, True{}, 0, h2, b2, Left{}, True{}, 0, Pos{12, 8}, Active{}, seed}
+  +s1 = next_seed(seed)
+  +s2 = next_seed(s1)
+  +s3 = next_seed(s2)
+  +s4 = next_seed(s3)
+  +s5 = next_seed(s4)
+  +s6 = next_seed(s5)
+  +x1 = (((s1 % 6) + 3) : U32)
+  +y1 = (((s2 % 10) + 3) : U32)
+  +h1 = {Pos{x1, y1} : Pos}
+  +b1 = {[Pos{((x1 - 1) : U32), y1}, Pos{((x1 - 2) : U32), y1}] : +List<Pos>}
+  +x2 = (((s3 % 6) + 15) : U32)
+  +y2 = (((s4 % 10) + 3) : U32)
+  +h2 = {Pos{x2, y2} : Pos}
+  +b2 = {[Pos{((x2 + 1) : U32), y2}, Pos{((x2 + 2) : U32), y2}] : +List<Pos>}
+  +fx = (((s5 % 5) + 10) : U32)
+  +fy = (((s6 % 10) + 3) : U32)
+  VersusGame{h1, b1, Right{}, True{}, 0, h2, b2, Left{}, True{}, 0, Pos{fx, fy}, Active{}, s6}
 
 def get_versus_seed(vg: VersusState) -> U32:
   VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, seed} = vg

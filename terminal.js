@@ -221,6 +221,11 @@ function net_auto_join(mode) {
   return net_prompt_join(4242);
 }
 
+function get_random_seed() {
+  const s = Math.floor(Math.random() * 0x7FFFFFFF) >>> 0;
+  return s === 0 ? 1337 : s;
+}
+
 function net_close() {
   try {
     if (netClient) { netClient.destroy(); netClient = null; }
@@ -238,3 +243,4 @@ io_eff(CID(net_beacon_tick), net_beacon_tick);
 io_eff(CID(net_send_key), net_send_key);
 io_eff(CID(net_recv_key), net_recv_key);
 io_eff(CID(net_close), net_close);
+io_eff(CID(get_random_seed), get_random_seed);

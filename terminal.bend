@@ -48,6 +48,10 @@ def net_recv_key() -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
 
+def get_random_seed() -> IO(U32):
+  import "./terminal.c"
+  import "./terminal.js"
+
 def net_close() -> IO(Unit):
   import "./terminal.c"
   import "./terminal.js"
