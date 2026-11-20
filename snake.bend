@@ -218,7 +218,7 @@ def render_cells(fuel: Nat, +x: U32, +y: U32, +head: Pos, +food: Pos, +body: +Li
       c ++ render_cells(p, (x + 1 : U32), y, head, food, body, alive, d)
 
 def render_row(+y: U32, +w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool, +d: Dir) -> String:
-  "\u{1b}[1;36m│\u{1b}[0m" ++ render_cells(w_nat, 0, y, head, food, body, alive, d) ++ "\u{1b}[1;36m│\u{1b}[0m\n"
+  "\u{1b}[1;36m│\u{1b}[0m" ++ render_cells(w_nat, 0, y, head, food, body, alive, d) ++ "\u{1b}[1;36m│\u{1b}[0m\u{1b}[K\n"
 
 def render_quad(+y: U32, +w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool, +d: Dir) -> String:
   r0 r1 = render_row(y, w_nat, head, food, body, alive, d) render_row((y + 1 : U32), w_nat, head, food, body, alive, d)
@@ -233,15 +233,15 @@ def render_grid_par(+w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +ali
 def render_status(alive: Bool, score: U32) -> String:
   match alive:
     case True{}:
-      "\u{1b}[1;37mScore: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[37mControls: [W/A/S/D] or [↑/←/↓/→], [R] Restart, [Q] Quit\u{1b}[0m\n"
+      "\u{1b}[1;37mScore: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[37mControls: [W/A/S/D] or [↑/←/↓/→], [R] Restart, [Q] Quit\u{1b}[0m\u{1b}[K\n"
     case False{}:
-      "\u{1b}[1;31m💀  GAME OVER!  💀\u{1b}[0m   \u{1b}[1;37mFinal Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Restart  \u{1b}[1;33m[Q]\u{1b}[0m Quit\n"
+      "\u{1b}[1;31m💀  GAME OVER!  💀\u{1b}[0m   \u{1b}[1;37mFinal Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Restart  \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
 
 def render_frame(g: GameState, +w_nat: Nat) -> String:
   Game{+head, +body, +dir, +food, +score, +alive, +seed} = g
-  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE TUI  🐍\u{1b}[0m\n" : String}
-  border_top = {"\u{1b}[1;36m╭────────────────────────────────────────────────╮\u{1b}[0m\n" : String}
-  border_bot = {"\u{1b}[1;36m╰────────────────────────────────────────────────╯\u{1b}[0m\n" : String}
+  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE TUI  🐍\u{1b}[0m\u{1b}[K\n" : String}
+  border_top = {"\u{1b}[1;36m╭────────────────────────────────────────────────╮\u{1b}[0m\u{1b}[K\n" : String}
+  border_bot = {"\u{1b}[1;36m╰────────────────────────────────────────────────╯\u{1b}[0m\u{1b}[K\n" : String}
   grid = render_grid_par(w_nat, head, food, body, alive, dir)
   status = render_status(alive, score)
   (header ++ status) ++ (border_top ++ grid ++ border_bot)
