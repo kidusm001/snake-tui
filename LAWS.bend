@@ -77,5 +77,19 @@ law contains_empty_false:
   for p: Snake.Pos
   {Snake.contains_pos(Nil{}, p) == False{} : Bool}
 
+law max_score_higher:
+  {Snake.max_score(50, 20) == 50 : U32}
+
+law max_score_lower:
+  {Snake.max_score(20, 50) == 50 : U32}
+
+law max_score_equal:
+  {Snake.max_score(30, 30) == 30 : U32}
+
+law new_game_sets_highscore:
+  for seed: U32
+  for h: U32
+  {Snake.get_high_score(Snake.new_game(seed, h)) == h : U32}
+
 law step_inactive_game_stays_dead:
-  {Snake.step_game(Snake.Game{Snake.Pos{0, 0}, Nil{}, Snake.Right{}, Snake.Pos{5, 5}, 10, False{}, 123}, 0, 24, 16) == Snake.Game{Snake.Pos{0, 0}, Nil{}, Snake.Right{}, Snake.Pos{5, 5}, 10, False{}, 123} : Snake.GameState}
+  {Snake.step_game(Snake.Game{Snake.Pos{0, 0}, Nil{}, Snake.Right{}, Snake.Pos{5, 5}, 10, 20, False{}, 123}, 0, 24, 16) == Snake.Game{Snake.Pos{0, 0}, Nil{}, Snake.Right{}, Snake.Pos{5, 5}, 10, 20, False{}, 123} : Snake.GameState}

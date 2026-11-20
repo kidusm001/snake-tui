@@ -9,8 +9,30 @@ type Dir is Data:
 type Pos is Data:
   Pos{x: U32, y: U32}
 
+def max_score_select(+a: U32, +b: U32, a_ge_b: Bool) -> U32:
+  match a_ge_b:
+    case True{}:
+      a
+    case False{}:
+      b
+
+def max_score(+a: U32, +b: U32) -> U32:
+  max_score_select(a, b, (a >= b : U32))
+
 type GameState is Data:
-  Game{head: Pos, body: +List<Pos>, dir: Dir, food: Pos, score: U32, alive: Bool, seed: U32}
+  Game{head: Pos, body: +List<Pos>, dir: Dir, food: Pos, score: U32, high_score: U32, alive: Bool, seed: U32}
+
+def get_high_score(g: GameState) -> U32:
+  Game{head, body, dir, food, score, high_score, alive, seed} = g
+  high_score
+
+def get_score(g: GameState) -> U32:
+  Game{head, body, dir, food, score, high_score, alive, seed} = g
+  score
+
+def is_alive(g: GameState) -> Bool:
+  Game{head, body, dir, food, score, high_score, alive, seed} = g
+  alive
 
 def opp(d: Dir) -> Dir:
   match d:
@@ -122,46 +144,47 @@ def gen_food(+seed: U32, +w: U32, +h: U32) -> Pos & U32:
   y = (s2 % h : U32)
   (Pos{x, y}, s2)
 
-def make_ate_game(food_seed: Pos & U32, new_head: Pos, new_body: +List<Pos>, new_dir: Dir, new_score: U32) -> GameState:
+def make_ate_game(food_seed: Pos & U32, new_head: Pos, new_body: +List<Pos>, new_dir: Dir, new_score: U32, new_high: U32) -> GameState:
   (new_food, new_seed) = food_seed
-  Game{new_head, new_body, new_dir, new_food, new_score, True{}, new_seed}
+  Game{new_head, new_body, new_dir, new_food, new_score, new_high, True{}, new_seed}
 
-def step_food(ate: Bool, +new_head: Pos, head: Pos, body: +List<Pos>, +new_dir: Dir, food: Pos, +score: U32, +seed: U32, +w: U32, +h: U32) -> GameState:
+def step_food(ate: Bool, +new_head: Pos, head: Pos, body: +List<Pos>, +new_dir: Dir, food: Pos, +score: U32, +high_score: U32, +seed: U32, +w: U32, +h: U32) -> GameState:
   match ate:
     case True{}:
       new_body = grow(head, body)
-      new_score = (score + 10 : U32)
-      make_ate_game(gen_food(seed, w, h), new_head, new_body, new_dir, new_score)
+      +new_score = (score + 10 : U32)
+      new_high = max_score(high_score, new_score)
+      make_ate_game(gen_food(seed, w, h), new_head, new_body, new_dir, new_score, new_high)
     case False{}:
       new_body = grow(head, drop_last(body))
-      Game{new_head, new_body, new_dir, food, score, True{}, seed}
+      Game{new_head, new_body, new_dir, food, score, high_score, True{}, seed}
 
-def step_alive(dead: Bool, +new_head: Pos, head: Pos, body: +List<Pos>, +new_dir: Dir, +food: Pos, +score: U32, +seed: U32, +w: U32, +h: U32) -> GameState:
+def step_alive(dead: Bool, +new_head: Pos, head: Pos, body: +List<Pos>, +new_dir: Dir, +food: Pos, +score: U32, +high_score: U32, +seed: U32, +w: U32, +h: U32) -> GameState:
   match dead:
     case True{}:
-      Game{head, body, new_dir, food, score, False{}, seed}
+      Game{head, body, new_dir, food, score, high_score, False{}, seed}
     case False{}:
       ate = pos_eq(new_head, food)
-      step_food(ate, new_head, head, body, new_dir, food, score, seed, w, h)
+      step_food(ate, new_head, head, body, new_dir, food, score, high_score, seed, w, h)
 
 def step_active(g: GameState, +key: U32, +w: U32, +h: U32) -> GameState:
-  Game{+head, +body, +dir, +food, +score, alive, +seed} = g
+  Game{+head, +body, +dir, +food, +score, +high_score, alive, +seed} = g
   match alive:
     case False{}:
-      Game{head, body, dir, food, score, False{}, seed}
+      Game{head, body, dir, food, score, high_score, False{}, seed}
     case True{}:
       +new_dir = key_to_dir(key, dir)
       +new_head = move_pos(head, new_dir)
       hit_wall = is_out_of_bounds(new_head, w, h)
       hit_self = contains_pos(body, new_head)
       dead = hit_wall || hit_self
-      step_alive(dead, new_head, head, body, new_dir, food, score, seed, w, h)
+      step_alive(dead, new_head, head, body, new_dir, food, score, high_score, seed, w, h)
 
 def step_game(g: GameState, key: U32, w: U32, h: U32) -> GameState:
   step_active(g, key, w, h)
 
-def new_game(+seed: U32) -> GameState:
-  Game{Pos{8, 6}, {[Pos{7, 6}, Pos{6, 6}] : +List<Pos>}, Right{}, Pos{14, 6}, 0, True{}, seed}
+def new_game(+seed: U32, +high_score: U32) -> GameState:
+  Game{Pos{8, 6}, {[Pos{7, 6}, Pos{6, 6}] : +List<Pos>}, Right{}, Pos{14, 6}, 0, high_score, True{}, seed}
 
 # Rendering
 def head_glyph(alive: Bool) -> String:
@@ -219,18 +242,26 @@ def render_grid_par(+w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +ali
   q2 q3 = render_quad(8, w_nat, head, food, body, alive) render_quad(12, w_nat, head, food, body, alive)
   (q0 ++ q1) ++ (q2 ++ q3)
 
-def render_status(alive: Bool, score: U32) -> String:
+def render_game_over(is_new_high: Bool, score: U32, high_score: U32) -> String:
+  match is_new_high:
+    case True{}:
+      "\u{1b}[1;32m🎉 NEW HIGH SCORE! 🏆 " ++ U32.show(score) ++ " 🎉\u{1b}[0m\u{1b}[K\n\u{1b}[1;33m[R]\u{1b}[0m Play Again   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+    case False{}:
+      "\u{1b}[1;31m💀  GAME OVER!  💀\u{1b}[0m\u{1b}[K\n\u{1b}[1;37mFinal Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Play Again   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+
+def render_status(alive: Bool, +score: U32, +high_score: U32) -> String:
   match alive:
     case True{}:
-      "\u{1b}[1;37m🍎 Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[37mControls: [W/A/S/D] or [↑/←/↓/→]\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;37m🍎 Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[37mControls: [W/A/S/D] or [↑/←/↓/→]\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case False{}:
-      "\u{1b}[1;31m💀  GAME OVER!  💀\u{1b}[0m\u{1b}[K\n\u{1b}[1;37m🍎 Final Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33mPress [R] to Play Again\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33mPress [Q] to Quit\u{1b}[0m\u{1b}[K\n"
+      is_new = (score >= high_score : U32) && (score > 0 : U32)
+      render_game_over(is_new, score, high_score)
 
 def render_frame(g: GameState, +w_nat: Nat) -> String:
-  Game{+head, +body, +dir, +food, +score, +alive, +seed} = g
+  Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
   header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\u{1b}[K\n" : String}
   border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
   border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\n" : String}
   grid = render_grid_par(w_nat, head, food, body, alive)
-  status = render_status(alive, score)
+  status = render_status(alive, score, high_score)
   (header ++ status) ++ (border_top ++ grid ++ border_bot)

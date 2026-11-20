@@ -58,6 +58,27 @@ function term_poll_key() {
   return 0;
 }
 
+function load_high_score() {
+  try {
+    const fs = require("fs");
+    if (fs.existsSync("highscore.txt")) {
+      const txt = fs.readFileSync("highscore.txt", "utf8").trim();
+      const n = parseInt(txt, 10);
+      if (!isNaN(n) && n >= 0) return n >>> 0;
+    }
+  } catch (e) {}
+  return 0;
+}
+
+function save_high_score(score) {
+  try {
+    require("fs").writeFileSync("highscore.txt", `${score}\n`);
+  } catch (e) {}
+  return {$: CID(Unit)};
+}
+
 io_eff(CID(init), term_init);
 io_eff(CID(restore), term_restore);
 io_eff(CID(poll_key), term_poll_key);
+io_eff(CID(load_high_score), load_high_score);
+io_eff(CID(save_high_score), save_high_score);

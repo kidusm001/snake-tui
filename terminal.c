@@ -56,8 +56,29 @@ Term term_poll_key_run(Env e, Term* f, IoWork* w) {
   return (Term)(uint32_t)ch;
 }
 
+Term load_high_score_run(Env e, Term* f, IoWork* w) {
+  FILE* fp = fopen("highscore.txt", "r");
+  if (!fp) return (Term)0;
+  uint32_t s = 0;
+  if (fscanf(fp, "%u", &s) != 1) s = 0;
+  fclose(fp);
+  return (Term)s;
+}
+
+Term save_high_score_run(Env e, Term* f, IoWork* w) {
+  uint32_t s = (uint32_t)f[0];
+  FILE* fp = fopen("highscore.txt", "w");
+  if (fp) {
+    fprintf(fp, "%u\n", s);
+    fclose(fp);
+  }
+  return term_pak(CID(Unit), 0);
+}
+
 static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(init), term_init_run);
   io_eff(CID(restore), term_restore_run);
   io_eff(CID(poll_key), term_poll_key_run);
+  io_eff(CID(load_high_score), load_high_score_run);
+  io_eff(CID(save_high_score), save_high_score_run);
 }

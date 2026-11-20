@@ -82,5 +82,17 @@ def Laws.grow_adds_head(p, body):
 def Laws.contains_empty_false(p):
   {==}
 
+def Laws.max_score_higher():
+  {==}
+
+def Laws.max_score_lower():
+  {==}
+
+def Laws.max_score_equal():
+  {==}
+
+def Laws.new_game_sets_highscore(seed, h):
+  {==}
+
 def Laws.step_inactive_game_stays_dead():
   {==}

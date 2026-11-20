@@ -11,10 +11,12 @@ def is_restart(+k: U32) -> Bool:
 @unsafe def step_io_run(p: Nat, k: U32, restart: Bool, g: Snake.GameState) -> IO(Unit):
   match restart:
     case True{}:
-      Snake.Game{+head, +body, +dir, +food, +score, +alive, +seed} = g
-      +new_g : Snake.GameState = Snake.new_game(Snake.next_seed(seed))
+      Snake.Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
+      +cur_best = Snake.max_score(high_score, score)
+      +new_g : Snake.GameState = Snake.new_game(Snake.next_seed(seed), cur_best)
       frame : String = Snake.render_frame(new_g, 24n)
       do IO<Unit>:
+        Term.save_high_score(cur_best)
         IO.write(frame)
         IO.sleep(120)
         game_loop(p, new_g)
@@ -22,14 +24,17 @@ def is_restart(+k: U32) -> Bool:
       +next_g : Snake.GameState = Snake.step_game(g, k, 24, 16)
       frame : String = Snake.render_frame(next_g, 24n)
       do IO<Unit>:
+        Term.save_high_score(Snake.get_high_score(next_g))
         IO.write(frame)
         IO.sleep(120)
         game_loop(p, next_g)
 
-@unsafe def step_io(p: Nat, +k: U32, quit: Bool, g: Snake.GameState) -> IO(Unit):
+@unsafe def step_io(p: Nat, +k: U32, quit: Bool, +g: Snake.GameState) -> IO(Unit):
   match quit:
     case True{}:
-      Term.restore()
+      do IO<Unit>:
+        Term.save_high_score(Snake.get_high_score(g))
+        Term.restore()
     case False{}:
       step_io_run(p, k, is_restart(k), g)
 
@@ -45,7 +50,8 @@ def is_restart(+k: U32) -> Bool:
 def main() -> IO(Unit):
   do IO<Unit>:
     Term.init()
-    +g : Snake.GameState = Snake.new_game(12345)
+    saved_high : U32 <- Term.load_high_score()
+    +g : Snake.GameState = Snake.new_game(12345, saved_high)
     frame : String = Snake.render_frame(g, 24n)
     IO.write(frame)
     game_loop(1000000n, g)

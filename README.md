@@ -11,6 +11,7 @@ A classic Snake game built for the terminal using [Bend](https://github.com/High
 - **Formal Verification (Laws & Proofs)**:
   - [`LAWS.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/LAWS.bend): Mathematical definitions of game invariants (direction reversal prevention, movement coordinates, out-of-bounds safety, growth mechanics, collision correctness).
   - [`PROOF.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/PROOF.bend): Formal proofs checked by Bend's theorem prover (`bend PROOF.bend` passes with `ALL PROOFS CHECK`).
+- **Persistent High Score Tracking**: Real-time high score updates during gameplay, saved automatically to disk (`highscore.txt`), preserved across sessions, and highlighted with celebratory game-over banners (`🎉 NEW HIGH SCORE! 🏆`).
 - **Textured Scale Snake Graphics**: Reptile-scale shaded body (`▓▓`), bright solid lime head (`██`), red apple (`🍎`), crash indicator (`✖✖`), and neon blue double-line arcade cabinet (`╔═══╗`, `║   ║`, `╚═══╝`).
 - **Low-Latency TUI**: Raw mode terminal driver with ANSI colors, non-blocking keyboard polling, and arrow key escape sequence parsing.
 
