@@ -94,5 +94,20 @@ def Laws.max_score_equal():
 def Laws.new_game_sets_highscore(seed, h):
   {==}
 
+def Laws.pick_food_rejects_collision(cand, alt):
+  {==}
+
+def Laws.pick_food_accepts_free(cand, alt):
+  {==}
+
+def Laws.is_snake_cell_free():
+  {==}
+
+def Laws.is_snake_cell_head(body):
+  {==}
+
+def Laws.is_snake_cell_body():
+  {==}
+
 def Laws.step_inactive_game_stays_dead():
   {==}

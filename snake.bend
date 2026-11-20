@@ -137,24 +137,53 @@ def grow(head: Pos, body: +List<Pos>) -> +List<Pos>:
 def next_seed(+seed: U32) -> U32:
   (seed * 1664525 + 1013904223 : U32)
 
-def gen_food(+seed: U32, +w: U32, +h: U32) -> Pos & U32:
+type FoodSeed is Data:
+  FoodSeed{pos: Pos, seed: U32}
+
+def is_snake_cell(+p: Pos, +head: Pos, +body: +List<Pos>) -> Bool:
+  pos_eq(p, head) || contains_pos(body, p)
+
+def gen_food_candidate(+seed: U32, +w: U32, +h: U32) -> FoodSeed:
   +s1 = next_seed(seed)
   x = (s1 % w : U32)
   +s2 = next_seed(s1)
   y = (s2 % h : U32)
-  (Pos{x, y}, s2)
+  FoodSeed{Pos{x, y}, s2}
 
-def make_ate_game(food_seed: Pos & U32, new_head: Pos, new_body: +List<Pos>, new_dir: Dir, new_score: U32, new_high: U32) -> GameState:
-  (new_food, new_seed) = food_seed
+def pick_food(hit: Bool, cand: FoodSeed, next_food: FoodSeed) -> FoodSeed:
+  match hit:
+    case False{}:
+      cand
+    case True{}:
+      next_food
+
+def pick_cand(+cand: FoodSeed, next_food: FoodSeed, +head: Pos, +body: +List<Pos>) -> FoodSeed:
+  FoodSeed{+pos, +seed} = cand
+  hit = is_snake_cell(pos, head, body)
+  pick_food(hit, cand, next_food)
+
+def gen_food_safe(fuel: Nat, +seed: U32, +head: Pos, +body: +List<Pos>, +w: U32, +h: U32) -> FoodSeed:
+  match fuel:
+    case 0n:
+      FoodSeed{Pos{1, 1}, seed}
+    case 1n+p:
+      +cand = gen_food_candidate(seed, w, h)
+      +s_next = next_seed(next_seed(seed))
+      next_food = gen_food_safe(p, s_next, head, body, w, h)
+      pick_cand(cand, next_food, head, body)
+
+def make_ate_game(food_seed: FoodSeed, new_head: Pos, new_body: +List<Pos>, new_dir: Dir, new_score: U32, new_high: U32) -> GameState:
+  FoodSeed{new_food, new_seed} = food_seed
   Game{new_head, new_body, new_dir, new_food, new_score, new_high, True{}, new_seed}
 
 def step_food(ate: Bool, +new_head: Pos, head: Pos, body: +List<Pos>, +new_dir: Dir, food: Pos, +score: U32, +high_score: U32, +seed: U32, +w: U32, +h: U32) -> GameState:
   match ate:
     case True{}:
-      new_body = grow(head, body)
+      +new_body = grow(head, body)
       +new_score = (score + 10 : U32)
       new_high = max_score(high_score, new_score)
-      make_ate_game(gen_food(seed, w, h), new_head, new_body, new_dir, new_score, new_high)
+      safe_food = gen_food_safe(32n, seed, new_head, new_body, w, h)
+      make_ate_game(safe_food, new_head, new_body, new_dir, new_score, new_high)
     case False{}:
       new_body = grow(head, drop_last(body))
       Game{new_head, new_body, new_dir, food, score, high_score, True{}, seed}

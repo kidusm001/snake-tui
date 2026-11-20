@@ -91,5 +91,25 @@ law new_game_sets_highscore:
   for h: U32
   {Snake.get_high_score(Snake.new_game(seed, h)) == h : U32}
 
+law pick_food_rejects_collision:
+  for cand: Snake.FoodSeed
+  for alt: Snake.FoodSeed
+  {Snake.pick_food(True{}, cand, alt) == alt : Snake.FoodSeed}
+
+law pick_food_accepts_free:
+  for cand: Snake.FoodSeed
+  for alt: Snake.FoodSeed
+  {Snake.pick_food(False{}, cand, alt) == cand : Snake.FoodSeed}
+
+law is_snake_cell_free:
+  {Snake.is_snake_cell(Snake.Pos{1, 1}, Snake.Pos{5, 5}, Nil{}) == False{} : Bool}
+
+law is_snake_cell_head:
+  for body: +List<Snake.Pos>
+  {Snake.is_snake_cell(Snake.Pos{5, 5}, Snake.Pos{5, 5}, body) == True{} : Bool}
+
+law is_snake_cell_body:
+  {Snake.is_snake_cell(Snake.Pos{5, 5}, Snake.Pos{0, 0}, Con{Snake.Pos{5, 5}, Nil{}}) == True{} : Bool}
+
 law step_inactive_game_stays_dead:
   {Snake.step_game(Snake.Game{Snake.Pos{0, 0}, Nil{}, Snake.Right{}, Snake.Pos{5, 5}, 10, 20, False{}, 123}, 0, 24, 16) == Snake.Game{Snake.Pos{0, 0}, Nil{}, Snake.Right{}, Snake.Pos{5, 5}, 10, 20, False{}, 123} : Snake.GameState}
