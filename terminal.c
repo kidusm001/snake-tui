@@ -3,6 +3,8 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -129,6 +131,7 @@ Term load_high_score_run(Env e, Term* f, IoWork* w) {
 
 static int server_sock = -1;
 static int client_sock = -1;
+static int beacon_sock = -1;
 
 static void get_lan_ip(char* buf, size_t buflen) {
   int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -152,10 +155,126 @@ static void get_lan_ip(char* buf, size_t buflen) {
   strncpy(buf, "127.0.0.1", buflen);
 }
 
+Term net_beacon_tick_run(Env e, Term* f, IoWork* w) {
+  uint32_t mode = (uint32_t)f[0];
+  if (beacon_sock >= 0) {
+    char msg[64];
+    snprintf(msg, sizeof(msg), "BSNK_ROOM:%u", mode);
+
+    struct sockaddr_in baddr;
+    memset(&baddr, 0, sizeof(baddr));
+    baddr.sin_family = AF_INET;
+    baddr.sin_port = htons(4243);
+
+    baddr.sin_addr.s_addr = inet_addr("255.255.255.255");
+    sendto(beacon_sock, msg, strlen(msg), 0, (struct sockaddr*)&baddr, sizeof(baddr));
+
+    baddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    sendto(beacon_sock, msg, strlen(msg), 0, (struct sockaddr*)&baddr, sizeof(baddr));
+  }
+  return term_pak(CID(Unit), 0);
+}
+
+Term net_auto_join_run(Env e, Term* f, IoWork* w) {
+  uint32_t target_mode = (uint32_t)f[0];
+  uint32_t port = 4242;
+
+  int lsock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (lsock < 0) return (Term)0;
+
+  int opt = 1;
+  setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef SO_REUSEPORT
+  setsockopt(lsock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
+  setsockopt(lsock, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
+
+  struct sockaddr_in laddr;
+  memset(&laddr, 0, sizeof(laddr));
+  laddr.sin_family = AF_INET;
+  laddr.sin_port = htons(4243);
+  laddr.sin_addr.s_addr = INADDR_ANY;
+
+  if (bind(lsock, (struct sockaddr*)&laddr, sizeof(laddr)) < 0) {
+    close(lsock);
+    return (Term)0;
+  }
+
+  write(STDOUT_FILENO, "\x1b[2J\x1b[H\x1b[1;36m🔍 SCANNING FOR LAN ROOMS...\x1b[0m\n\n\x1b[1;37mListening for active game rooms on local network...\x1b[0m\n\x1b[90m(Make sure the host selected 'Host' on their PC)\x1b[0m\n\n", 175);
+
+  struct sockaddr_in sender_addr;
+  char host_ip[64] = {0};
+  int found = 0;
+
+  for (int iter = 0; iter < 10; iter++) {
+    struct pollfd pfd = { .fd = lsock, .events = POLLIN, .revents = 0 };
+    int ret = poll(&pfd, 1, 250);
+    if (ret > 0 && (pfd.revents & POLLIN)) {
+      char buf[128] = {0};
+      socklen_t slen = sizeof(sender_addr);
+      ssize_t n = recvfrom(lsock, buf, sizeof(buf) - 1, 0, (struct sockaddr*)&sender_addr, &slen);
+      if (n > 0) {
+        buf[n] = 0;
+        if (strncmp(buf, "BSNK_ROOM:", 10) == 0) {
+          uint32_t r_mode = (uint32_t)atoi(buf + 10);
+          if (r_mode == target_mode || target_mode == 0) {
+            inet_ntop(AF_INET, &sender_addr.sin_addr, host_ip, sizeof(host_ip));
+            found = 1;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  close(lsock);
+
+  if (!found) {
+    write(STDOUT_FILENO, "\x1b[33m⚡ No automatic broadcast room detected yet.\x1b[0m\n\x1b[90mSwitching to direct IP join...\x1b[0m\n\n", 95);
+    usleep(700000);
+    return (Term)0;
+  }
+
+  char found_msg[128];
+  snprintf(found_msg, sizeof(found_msg), "\x1b[1;32m🎯 FOUND ROOM on %s!\x1b[0m Connecting...\n", host_ip);
+  write(STDOUT_FILENO, found_msg, strlen(found_msg));
+
+  if (client_sock >= 0) { close(client_sock); client_sock = -1; }
+  int s = socket(AF_INET, SOCK_STREAM, 0);
+  if (s < 0) return (Term)0;
+
+  struct sockaddr_in tcp_addr;
+  memset(&tcp_addr, 0, sizeof(tcp_addr));
+  tcp_addr.sin_family = AF_INET;
+  tcp_addr.sin_port = htons((uint16_t)port);
+  tcp_addr.sin_addr = sender_addr.sin_addr;
+
+  if (connect(s, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr)) < 0) {
+    close(s);
+    return (Term)0;
+  }
+
+  int flags = fcntl(s, F_GETFL, 0);
+  fcntl(s, F_SETFL, flags | O_NONBLOCK);
+  client_sock = s;
+  return (Term)1;
+}
+
 Term net_listen_run(Env e, Term* f, IoWork* w) {
   uint32_t port = (uint32_t)f[0];
   if (server_sock >= 0) { close(server_sock); server_sock = -1; }
   if (client_sock >= 0) { close(client_sock); client_sock = -1; }
+  if (beacon_sock >= 0) { close(beacon_sock); beacon_sock = -1; }
+
+  beacon_sock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (beacon_sock >= 0) {
+    int opt = 1;
+    setsockopt(beacon_sock, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
+    setsockopt(beacon_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef SO_REUSEPORT
+    setsockopt(beacon_sock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
+  }
 
   server_sock = socket(AF_INET, SOCK_STREAM, 0);
   if (server_sock < 0) return (Term)0;
@@ -186,7 +305,7 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
 
   char lan_ip[64] = "127.0.0.1";
   get_lan_ip(lan_ip, sizeof(lan_ip));
-  printf("\x1b[2J\x1b[H\x1b[1;36m📡 HOSTING ON %s:%u\x1b[0m\n\n\x1b[1;37mWaiting for Player 2 to join on LAN...\x1b[0m\n\x1b[90m(Press [Q] to cancel)\x1b[0m\n", lan_ip, port);
+  printf("\x1b[2J\x1b[H\x1b[1;36m📡 ROOM OPEN ON %s:%u\x1b[0m\n\n\x1b[1;32mBroadcasting room beacon to local network...\x1b[0m\n\x1b[1;37mOther PCs can join automatically with zero setup!\x1b[0m\n\x1b[90m(Press [Q] to cancel)\x1b[0m\n", lan_ip, port);
   fflush(stdout);
 
   return (Term)1;
@@ -305,6 +424,7 @@ Term net_recv_key_run(Env e, Term* f, IoWork* w) {
 Term net_close_run(Env e, Term* f, IoWork* w) {
   if (client_sock >= 0) { close(client_sock); client_sock = -1; }
   if (server_sock >= 0) { close(server_sock); server_sock = -1; }
+  if (beacon_sock >= 0) { close(beacon_sock); beacon_sock = -1; }
   return term_pak(CID(Unit), 0);
 }
 
@@ -317,6 +437,8 @@ static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(net_listen), net_listen_run);
   io_eff(CID(net_accept), net_accept_run);
   io_eff(CID(net_prompt_join), net_prompt_join_run);
+  io_eff(CID(net_auto_join), net_auto_join_run);
+  io_eff(CID(net_beacon_tick), net_beacon_tick_run);
   io_eff(CID(net_send_key), net_send_key_run);
   io_eff(CID(net_recv_key), net_recv_key_run);
   io_eff(CID(net_close), net_close_run);

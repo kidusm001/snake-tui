@@ -359,6 +359,7 @@ def filter_p2_key(+k: U32) -> U32:
         Term.restore()
     case False{}:
       do IO<Unit>:
+        Term.net_beacon_tick(mode)
         +ok : U32 <- Term.net_accept()
         wait_host_check(U32.is_eq(ok, 1), p, mode)
 
@@ -387,6 +388,15 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(1500)
         Term.restore()
 
+@unsafe def join_coop_auto_fallback(auto_ok: Bool) -> IO(Unit):
+  match auto_ok:
+    case True{}:
+      join_coop_step(True{})
+    case False{}:
+      do IO<Unit>:
+        ok : U32 <- Term.net_prompt_join(4242)
+        join_coop_step(U32.is_eq(ok, 1))
+
 @unsafe def join_versus_step(is_ok: Bool) -> IO(Unit):
   match is_ok:
     case True{}:
@@ -400,6 +410,15 @@ def filter_p2_key(+k: U32) -> U32:
         IO.print("\nFailed to connect to host. Returning to menu...\n")
         IO.sleep(1500)
         Term.restore()
+
+@unsafe def join_versus_auto_fallback(auto_ok: Bool) -> IO(Unit):
+  match auto_ok:
+    case True{}:
+      join_versus_step(True{})
+    case False{}:
+      do IO<Unit>:
+        ok : U32 <- Term.net_prompt_join(4242)
+        join_versus_step(U32.is_eq(ok, 1))
 
 # Main Menu Dispatcher
 @unsafe def menu_select(+choice: U32) -> IO(Unit):
@@ -420,8 +439,8 @@ def filter_p2_key(+k: U32) -> U32:
     case 51:
       # [3] LAN Co-op Join
       do IO<Unit>:
-        ok : U32 <- Term.net_prompt_join(4242)
-        join_coop_step(U32.is_eq(ok, 1))
+        auto_ok : U32 <- Term.net_auto_join(2)
+        join_coop_auto_fallback(U32.is_eq(auto_ok, 1))
     case 52:
       # [4] LAN Versus Host
       do IO<Unit>:
@@ -430,8 +449,8 @@ def filter_p2_key(+k: U32) -> U32:
     case 53:
       # [5] LAN Versus Join
       do IO<Unit>:
-        ok : U32 <- Term.net_prompt_join(4242)
-        join_versus_step(U32.is_eq(ok, 1))
+        auto_ok : U32 <- Term.net_auto_join(4)
+        join_versus_auto_fallback(U32.is_eq(auto_ok, 1))
     case 54:
       # [6] Local Co-op
       do IO<Unit>:

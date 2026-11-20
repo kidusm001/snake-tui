@@ -193,10 +193,33 @@ function net_recv_key() {
   return 0;
 }
 
+let beaconSocket = null;
+
+function net_beacon_tick(mode) {
+  try {
+    const dgram = require("dgram");
+    if (!beaconSocket) {
+      beaconSocket = dgram.createSocket({ type: "udp4", reuseAddr: true });
+      beaconSocket.bind(() => {
+        try { beaconSocket.setBroadcast(true); } catch (_) {}
+      });
+    }
+    const msg = Buffer.from(`BSNK_ROOM:${mode}`);
+    beaconSocket.send(msg, 0, msg.length, 4243, "255.255.255.255");
+    beaconSocket.send(msg, 0, msg.length, 4243, "127.0.0.1");
+  } catch (e) {}
+  return {$: CID(Unit)};
+}
+
+function net_auto_join(mode) {
+  return net_prompt_join(4242);
+}
+
 function net_close() {
   try {
     if (netClient) { netClient.destroy(); netClient = null; }
     if (netServer) { netServer.close(); netServer = null; }
+    if (beaconSocket) { beaconSocket.close(); beaconSocket = null; }
   } catch (e) {}
   return {$: CID(Unit)};
 }
@@ -204,6 +227,8 @@ function net_close() {
 io_eff(CID(net_listen), net_listen);
 io_eff(CID(net_accept), net_accept);
 io_eff(CID(net_prompt_join), net_prompt_join);
+io_eff(CID(net_auto_join), net_auto_join);
+io_eff(CID(net_beacon_tick), net_beacon_tick);
 io_eff(CID(net_send_key), net_send_key);
 io_eff(CID(net_recv_key), net_recv_key);
 io_eff(CID(net_close), net_close);

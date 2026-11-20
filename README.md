@@ -4,6 +4,34 @@ A classic Snake game built for the terminal using [Bend](https://github.com/High
 
 ---
 
+## Quick Start: Download & Play (Linux)
+
+You do **not** need Bend or any compiler installed on other PCs to play! Simply download the precompiled binary from [GitHub Releases](https://github.com/kidusm001/snake-tui/releases):
+
+```bash
+# Download the standalone binary
+curl -LO https://github.com/kidusm001/snake-tui/releases/latest/download/snake-tui
+chmod +x snake-tui
+
+# Run the game
+./snake-tui
+```
+
+---
+
+## Zero-Config LAN Multiplayer (Room Auto-Discovery)
+
+Playing with friends on your local Wi-Fi or LAN is completely automated:
+1. **Host PC**: Run `./snake-tui` and select:
+   - `[2] LAN Co-op (HOST)` or `[4] LAN Versus (HOST)`.
+   - The game immediately begins broadcasting a room beacon on the local network.
+2. **Joining PC**: Run `./snake-tui` and select:
+   - `[3] LAN Co-op (JOIN)` or `[5] LAN Versus (JOIN)`.
+   - The joining PC automatically detects the room beacon, discovers the host's IP address, and connects in seconds — **zero manual IP entry needed!**
+   - *(Optional fallback)*: If your router or local firewall blocks UDP broadcasts, it gracefully switches to direct IP input so you can still connect manually.
+
+---
+
 ## Features
 
 - **Pure Functional Logic**: The core game mechanics in [`snake.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/snake.bend) are 100% pure, deterministic, and formally verified.

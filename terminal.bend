@@ -32,6 +32,14 @@ def net_prompt_join(port: U32) -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
 
+def net_beacon_tick(mode: U32) -> IO(Unit):
+  import "./terminal.c"
+  import "./terminal.js"
+
+def net_auto_join(mode: U32) -> IO(U32):
+  import "./terminal.c"
+  import "./terminal.js"
+
 def net_send_key(k: U32) -> IO(Unit):
   import "./terminal.c"
   import "./terminal.js"
