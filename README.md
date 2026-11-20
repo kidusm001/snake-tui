@@ -32,6 +32,27 @@ Playing with friends on your local Wi-Fi or LAN is completely automated:
 
 ---
 
+## Playing with VPNs & Over the Internet (Tailscale)
+
+### 1. Consumer VPNs on Local Wi-Fi (NordVPN, Mullvad, Proton, ExpressVPN)
+By default, commercial VPNs enable **LAN isolation / kill switch** (blocking traffic to private subnets like `192.168.x.x` to prevent leaks). To play on local Wi-Fi while keeping your VPN connected, enable local network sharing:
+- **NordVPN**: Run `nordvpn set lan-discovery enable` (or toggle "LAN Discovery" in settings).
+- **Mullvad**: Run `mullvad lan set allow` (or Settings ➔ VPN settings ➔ Local network sharing ON).
+- **ProtonVPN**: Settings ➔ Advanced ➔ Enable "Allow LAN connections".
+- **ExpressVPN**: Options ➔ General ➔ Check "Allow access to devices on local network".
+- **Surfshark**: Settings ➔ VPN Settings ➔ Toggle "Invisible on LAN" OFF.
+- **Private Internet Access (PIA)**: Settings ➔ Network ➔ Check "Allow LAN Traffic".
+- **WireGuard**: In your `.conf`, make sure `AllowedIPs` does not capture your physical subnet.
+
+### 2. Playing from Anywhere in the World (Tailscale / ZeroTier)
+You don't need port forwarding, router configuration, or even to be on the same Wi-Fi! You can play across different cities or networks using [Tailscale](https://tailscale.com):
+1. Both players install Tailscale.
+2. The host runs `./snake-tui` and selects Host (the room screen will automatically detect and show your **Tailscale IP**, e.g. `100.x.y.z`).
+3. The joining player selects Join, and enters the host's Tailscale IP at the prompt.
+4. Enjoy encrypted, low-latency multiplayer from anywhere in the world!
+
+---
+
 ## Features
 
 - **Pure Functional Logic**: The core game mechanics in [`snake.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/snake.bend) are 100% pure, deterministic, and formally verified.

@@ -135,26 +135,36 @@ static int server_sock = -1;
 static int client_sock = -1;
 static int beacon_sock = -1;
 
-static void get_lan_ip(char* buf, size_t buflen) {
-  int sock = socket(AF_INET, SOCK_DGRAM, 0);
-  if (sock >= 0) {
-    struct sockaddr_in serv;
-    memset(&serv, 0, sizeof(serv));
-    serv.sin_family = AF_INET;
-    serv.sin_addr.s_addr = inet_addr("1.1.1.1");
-    serv.sin_port = htons(80);
-    if (connect(sock, (const struct sockaddr*)&serv, sizeof(serv)) == 0) {
-      struct sockaddr_in name;
-      socklen_t namelen = sizeof(name);
-      if (getsockname(sock, (struct sockaddr*)&name, &namelen) == 0) {
-        inet_ntop(AF_INET, &name.sin_addr, buf, buflen);
-        close(sock);
-        return;
+static void get_network_ips(char* lan_ip, size_t lan_len, char* mesh_ip, size_t mesh_len) {
+  strncpy(lan_ip, "127.0.0.1", lan_len);
+  mesh_ip[0] = '\0';
+
+  struct ifaddrs* ifaddr = NULL;
+  if (getifaddrs(&ifaddr) == 0) {
+    for (struct ifaddrs* ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+      if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+      if (ifa->ifa_flags & IFF_LOOPBACK) continue;
+
+      char ip_str[64];
+      struct sockaddr_in* sin = (struct sockaddr_in*)ifa->ifa_addr;
+      inet_ntop(AF_INET, &sin->sin_addr, ip_str, sizeof(ip_str));
+
+      // Check for Tailscale / ZeroTier mesh interfaces
+      if (strncmp(ifa->ifa_name, "tailscale", 9) == 0 ||
+          strncmp(ifa->ifa_name, "ts", 2) == 0 ||
+          strncmp(ifa->ifa_name, "zt", 2) == 0) {
+        strncpy(mesh_ip, ip_str, mesh_len - 1);
+      } else if ((ifa->ifa_flags & IFF_BROADCAST) && (strcmp(lan_ip, "127.0.0.1") == 0)) {
+        // Prefer physical ethernet / wifi over virtual bridges/containers
+        if (strncmp(ifa->ifa_name, "docker", 6) != 0 &&
+            strncmp(ifa->ifa_name, "br-", 3) != 0 &&
+            strncmp(ifa->ifa_name, "veth", 4) != 0) {
+          strncpy(lan_ip, ip_str, lan_len - 1);
+        }
       }
     }
-    close(sock);
+    freeifaddrs(ifaddr);
   }
-  strncpy(buf, "127.0.0.1", buflen);
 }
 
 Term net_beacon_tick_run(Env e, Term* f, IoWork* w) {
@@ -325,8 +335,18 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
   fcntl(server_sock, F_SETFL, flags | O_NONBLOCK);
 
   char lan_ip[64] = "127.0.0.1";
-  get_lan_ip(lan_ip, sizeof(lan_ip));
-  printf("\x1b[2J\x1b[H\x1b[1;36m📡 ROOM OPEN ON %s:%u\x1b[0m\n\n\x1b[1;32mBroadcasting room beacon to local network...\x1b[0m\n\x1b[1;37mOther PCs can join automatically with zero setup!\x1b[0m\n\x1b[90m(Press [Q] to cancel)\x1b[0m\n", lan_ip, port);
+  char mesh_ip[64] = "";
+  get_network_ips(lan_ip, sizeof(lan_ip), mesh_ip, sizeof(mesh_ip));
+
+  printf("\x1b[2J\x1b[H\x1b[1;36m📡 ROOM OPEN\x1b[0m\n\n");
+  printf("\x1b[1;32mBroadcasting room beacon to local network...\x1b[0m\n\n");
+  printf("  • \x1b[1;37mLocal LAN IP:\x1b[0m   \x1b[1;33m%s\x1b[0m (Port: %u)\n", lan_ip, port);
+  if (strlen(mesh_ip) > 0) {
+    printf("  • \x1b[1;37mTailscale IP:\x1b[0m   \x1b[1;35m%s\x1b[0m (Port: %u) \x1b[90m(Play from anywhere!)\x1b[0m\n", mesh_ip, port);
+  }
+  printf("\n\x1b[90mOther PCs on same Wi-Fi can join automatically with zero setup!\x1b[0m\n");
+  printf("\x1b[90mTip: If using a VPN (Nord/Mullvad/Proton), enable 'Allow LAN Traffic' or use Tailscale.\x1b[0m\n");
+  printf("\x1b[90m(Press [Q] to cancel)\x1b[0m\n");
   fflush(stdout);
 
   return (Term)1;
@@ -368,8 +388,10 @@ Term net_prompt_join_run(Env e, Term* f, IoWork* w) {
   if (env_host && strlen(env_host) > 0) {
     strncpy(ip, env_host, sizeof(ip) - 1);
   } else {
-    printf("\x1b[2J\x1b[H\x1b[1;36m🔗 JOIN LAN GAME\x1b[0m\n\n");
-    printf("\x1b[1;37mEnter Host IP address \x1b[33m[default: %s]\x1b[1;37m (or press Enter to use default):\x1b[0m\n> ", last_ip);
+    printf("\x1b[2J\x1b[H\x1b[1;36m🔗 JOIN LAN / MESH GAME\x1b[0m\n\n");
+    printf("\x1b[1;37mEnter Host IP address \x1b[33m[default: %s]\x1b[1;37m (or press Enter to use default):\x1b[0m\n", last_ip);
+    printf("\x1b[90m(Supports LAN IPs like 192.168.x.x, or Tailscale/VPN IPs like 100.x.x.x)\x1b[0m\n");
+    printf("\x1b[90m(If using Nord/Mullvad/Proton VPN, enable 'Allow LAN Traffic' in VPN settings)\x1b[0m\n> ");
     fflush(stdout);
 
     if (raw_mode_set) {
