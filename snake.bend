@@ -164,84 +164,73 @@ def new_game(+seed: U32) -> GameState:
   Game{Pos{8, 6}, {[Pos{7, 6}, Pos{6, 6}] : +List<Pos>}, Right{}, Pos{14, 6}, 0, True{}, seed}
 
 # Rendering
-def head_alive_glyph(d: Dir) -> String:
-  match d:
-    case Up{}:
-      "\u{1b}[1;32m▲ \u{1b}[0m"
-    case Down{}:
-      "\u{1b}[1;32m▼ \u{1b}[0m"
-    case Left{}:
-      "\u{1b}[1;32m◄ \u{1b}[0m"
-    case Right{}:
-      "\u{1b}[1;32m► \u{1b}[0m"
-
-def head_glyph(alive: Bool, d: Dir) -> String:
+def head_glyph(alive: Bool) -> String:
   match alive:
     case True{}:
-      head_alive_glyph(d)
+      "🟢"
     case False{}:
-      "\u{1b}[1;31m✖ \u{1b}[0m"
+      "💀"
 
 def cell_char_body(is_body: Bool) -> String:
   match is_body:
     case True{}:
-      "\u{1b}[32m● \u{1b}[0m"
+      "🟩"
     case False{}:
-      "\u{1b}[90m· \u{1b}[0m"
+      "  "
 
 def cell_char_food(is_food: Bool, is_body: Bool) -> String:
   match is_food:
     case True{}:
-      "\u{1b}[1;31m★ \u{1b}[0m"
+      "🍎"
     case False{}:
       cell_char_body(is_body)
 
-def cell_char_head(is_head: Bool, is_food: Bool, is_body: Bool, alive: Bool, d: Dir) -> String:
+def cell_char_head(is_head: Bool, is_food: Bool, is_body: Bool, alive: Bool) -> String:
   match is_head:
     case True{}:
-      head_glyph(alive, d)
+      head_glyph(alive)
     case False{}:
       cell_char_food(is_food, is_body)
 
-def cell_char(+target: Pos, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool, +d: Dir) -> String:
+def cell_char(+target: Pos, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
   is_head = pos_eq(target, head)
   is_food = pos_eq(target, food)
   is_body = contains_pos(body, target)
-  cell_char_head(is_head, is_food, is_body, alive, d)
+  cell_char_head(is_head, is_food, is_body, alive)
 
-def render_cells(fuel: Nat, +x: U32, +y: U32, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool, +d: Dir) -> String:
+def render_cells(fuel: Nat, +x: U32, +y: U32, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
   match fuel:
     case 0n:
       ""
     case 1n+p:
-      c = cell_char(Pos{x, y}, head, food, body, alive, d)
-      c ++ render_cells(p, (x + 1 : U32), y, head, food, body, alive, d)
+      c = cell_char(Pos{x, y}, head, food, body, alive)
+      c ++ render_cells(p, (x + 1 : U32), y, head, food, body, alive)
 
-def render_row(+y: U32, +w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool, +d: Dir) -> String:
-  "\u{1b}[1;36m│\u{1b}[0m" ++ render_cells(w_nat, 0, y, head, food, body, alive, d) ++ "\u{1b}[1;36m│\u{1b}[0m\u{1b}[K\n"
+def render_row(+y: U32, +w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
+  "\u{1b}[38;5;39m║\u{1b}[0m" ++ render_cells(w_nat, 0, y, head, food, body, alive) ++ "\u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
 
-def render_quad(+y: U32, +w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool, +d: Dir) -> String:
-  r0 r1 = render_row(y, w_nat, head, food, body, alive, d) render_row((y + 1 : U32), w_nat, head, food, body, alive, d)
-  r2 r3 = render_row((y + 2 : U32), w_nat, head, food, body, alive, d) render_row((y + 3 : U32), w_nat, head, food, body, alive, d)
+def render_quad(+y: U32, +w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
+  r0 r1 = render_row(y, w_nat, head, food, body, alive) render_row((y + 1 : U32), w_nat, head, food, body, alive)
+  r2 r3 = render_row((y + 2 : U32), w_nat, head, food, body, alive) render_row((y + 3 : U32), w_nat, head, food, body, alive)
   (r0 ++ r1) ++ (r2 ++ r3)
 
-def render_grid_par(+w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool, +d: Dir) -> String:
-  q0 q1 = render_quad(0, w_nat, head, food, body, alive, d) render_quad(4, w_nat, head, food, body, alive, d)
-  q2 q3 = render_quad(8, w_nat, head, food, body, alive, d) render_quad(12, w_nat, head, food, body, alive, d)
+def render_grid_par(+w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
+  q0 q1 = render_quad(0, w_nat, head, food, body, alive) render_quad(4, w_nat, head, food, body, alive)
+  q2 q3 = render_quad(8, w_nat, head, food, body, alive) render_quad(12, w_nat, head, food, body, alive)
   (q0 ++ q1) ++ (q2 ++ q3)
 
 def render_status(alive: Bool, score: U32) -> String:
   match alive:
     case True{}:
-      "\u{1b}[1;37mScore: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[37mControls: [W/A/S/D] or [↑/←/↓/→], [R] Restart, [Q] Quit\u{1b}[0m\u{1b}[K\n"
+      "\u{1b}[1;37m🍎 Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[37mControls: [W/A/S/D] or [↑/←/↓/→]\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case False{}:
-      "\u{1b}[1;31m💀  GAME OVER!  💀\u{1b}[0m   \u{1b}[1;37mFinal Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Restart  \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;31m💀  GAME OVER!  💀\u{1b}[0m\u{1b}[K\n\u{1b}[1;37m🍎 Final Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33mPress [R] to Play Again\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33mPress [Q] to Quit\u{1b}[0m\u{1b}[K\n"
 
 def render_frame(g: GameState, +w_nat: Nat) -> String:
   Game{+head, +body, +dir, +food, +score, +alive, +seed} = g
-  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE TUI  🐍\u{1b}[0m\u{1b}[K\n" : String}
-  border_top = {"\u{1b}[1;36m╭────────────────────────────────────────────────╮\u{1b}[0m\u{1b}[K\n" : String}
-  border_bot = {"\u{1b}[1;36m╰────────────────────────────────────────────────╯\u{1b}[0m\u{1b}[K\n" : String}
-  grid = render_grid_par(w_nat, head, food, body, alive, dir)
+  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\u{1b}[K\n" : String}
+  border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
+  border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\n" : String}
+  grid = render_grid_par(w_nat, head, food, body, alive)
   status = render_status(alive, score)
   (header ++ status) ++ (border_top ++ grid ++ border_bot)
