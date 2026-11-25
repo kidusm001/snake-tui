@@ -495,5 +495,6 @@ def filter_p2_key(+k: U32) -> U32:
 @unsafe def main() -> IO(Unit):
   do IO<Unit>:
     Term.init()
+    Term.check_update()
     IO.write(Snake.render_menu())
     menu_loop(100000n)

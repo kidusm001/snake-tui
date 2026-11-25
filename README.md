@@ -4,16 +4,28 @@ A classic Snake game built for the terminal using [Bend](https://github.com/High
 
 ---
 
-## Quick Start: Download & Play (Linux)
+## Quick Start: Install to PATH & Auto-Update (Linux)
 
-You do **not** need Bend or any compiler installed on other PCs to play! Simply download the precompiled binary from [GitHub Releases](https://github.com/kidusm001/snake-tui/releases):
+You do **not** need Bend or any compiler installed on your PC! Install `snake-tui` globally into your `PATH` with one command:
 
 ```bash
-# Download the standalone binary
+curl -fsSL https://raw.githubusercontent.com/kidusm001/snake-tui/main/install.sh | sh
+```
+
+Then run `snake-tui` from anywhere in your terminal:
+
+```bash
+snake-tui
+```
+
+- **Built-in Pre-Play Updater**: On launch, `snake-tui` checks GitHub Releases against its own SHA-256 hash. If a newer build is available, press `[U]` to download, verify, replace, and relaunch automatically before playing (or press `Enter` / `[S]` to skip, and if offline it launches immediately).
+- **Persistent High Scores**: Saved to `~/.local/share/snake-tui/highscore.bin` so records follow you regardless of which folder you run `snake-tui` from.
+
+Alternatively, download the standalone binary manually from [GitHub Releases](https://github.com/kidusm001/snake-tui/releases):
+
+```bash
 curl -LO https://github.com/kidusm001/snake-tui/releases/latest/download/snake-tui
 chmod +x snake-tui
-
-# Run the game
 ./snake-tui
 ```
 
