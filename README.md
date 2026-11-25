@@ -111,6 +111,7 @@ Select your mode at launch:
 - **LAN Multiplayer Restart**: Both players must press `R` on their own PC before a round resets (Versus keeps total round wins across restarts).
 - **Global**:
   - `R`: Restart / Vote Restart
+  - `M`: Return to Main Menu
   - `Q` / `Esc`: Quit / Cancel
 
 ---
