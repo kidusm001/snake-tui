@@ -235,6 +235,7 @@ function get_random_seed() {
 }
 
 let lanDiff = 1;
+let lanMode = 4;
 
 function net_set_lan_diff(diff) {
   lanDiff = diff >>> 0;
@@ -243,6 +244,16 @@ function net_set_lan_diff(diff) {
 
 function net_get_lan_diff() {
   return lanDiff >>> 0;
+}
+
+function net_set_lan_mode(mode) {
+  lanMode = mode >>> 0;
+  return {$: CID(Unit)};
+}
+
+function net_browse_join() {
+  if (net_prompt_join(4242) === 1) return lanMode >>> 0;
+  return 0;
 }
 
 function check_update() {
@@ -260,8 +271,6 @@ function net_close() {
 
 io_eff(CID(net_listen), net_listen);
 io_eff(CID(net_accept), net_accept);
-io_eff(CID(net_prompt_join), net_prompt_join);
-io_eff(CID(net_auto_join), net_auto_join);
 io_eff(CID(net_beacon_tick), net_beacon_tick);
 io_eff(CID(net_send_key), net_send_key);
 io_eff(CID(net_recv_key), net_recv_key);
@@ -270,3 +279,5 @@ io_eff(CID(get_random_seed), get_random_seed);
 io_eff(CID(check_update), check_update);
 io_eff(CID(net_set_lan_diff), net_set_lan_diff);
 io_eff(CID(net_get_lan_diff), net_get_lan_diff);
+io_eff(CID(net_set_lan_mode), net_set_lan_mode);
+io_eff(CID(net_browse_join), net_browse_join);

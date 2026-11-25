@@ -28,6 +28,14 @@ def net_get_lan_diff() -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
 
+def net_set_lan_mode(mode: U32) -> IO(Unit):
+  import "./terminal.c"
+  import "./terminal.js"
+
+def net_browse_join() -> IO(U32):
+  import "./terminal.c"
+  import "./terminal.js"
+
 def net_listen(port: U32) -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
@@ -36,15 +44,7 @@ def net_accept() -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
 
-def net_prompt_join(port: U32) -> IO(U32):
-  import "./terminal.c"
-  import "./terminal.js"
-
 def net_beacon_tick(mode: U32) -> IO(Unit):
-  import "./terminal.c"
-  import "./terminal.js"
-
-def net_auto_join(mode: U32) -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
 

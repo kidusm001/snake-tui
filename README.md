@@ -34,13 +34,14 @@ chmod +x snake-tui
 ## Zero-Config LAN Multiplayer (Room Auto-Discovery)
 
 Playing with friends on your local Wi-Fi or LAN is completely automated:
-1. **Host PC**: Run `./snake-tui` and select:
-   - `[2] LAN Co-op (HOST)` or `[4] LAN Versus (HOST)`.
-   - The game immediately begins broadcasting a room beacon on the local network.
-2. **Joining PC**: Run `./snake-tui` and select:
-   - `[3] LAN Co-op (JOIN)` or `[5] LAN Versus (JOIN)`.
-   - The joining PC automatically detects the room beacon, discovers the host's IP address, and connects in seconds — **zero manual IP entry needed!**
-   - *(Optional fallback)*: If your router or local firewall blocks UDP broadcasts, it gracefully switches to direct IP input so you can still connect manually.
+1. **Host PC**: Run `snake-tui`, pick your speed with `[D]`, and select:
+   - `[2] Host LAN Co-op` or `[3] Host LAN Versus`.
+   - The game opens a named room (using your hostname or `SNAKE_ROOM_NAME`) and broadcasts a live beacon on the local network.
+2. **Joining PC**: Run `snake-tui` and select:
+   - `[4] Join LAN Room`.
+   - You'll see a live **LAN Room Browser** listing every active room (`Mode`, `Room / Host IP`, and `Speed`).
+   - Pick any room with `[1-9]` or `↑/↓ + Enter` to connect immediately (or press `[M]` for manual IP entry over Tailscale/VPN).
+   - **Versus Win Tracking & Mutual Restart**: Versus matches count total round wins (`W:1`, `W:2`) across rounds, and pressing `[R]` in 2-player modes requires confirmation from **both** players before restarting!
 
 ---
 
@@ -94,21 +95,22 @@ You don't need port forwarding, router configuration, or even to be on the same 
 ### Main Menu
 Select your mode at launch:
 - `[1]` Solo Classic
-- `[2]` LAN Co-op (HOST)
-- `[3]` LAN Co-op (JOIN)
-- `[4]` LAN Versus (HOST)
-- `[5]` LAN Versus (JOIN)
-- `[6]` Local Co-op (1 Keyboard)
-- `[7]` Local Versus (1 Keyboard)
+- `[2]` Host LAN Co-op
+- `[3]` Host LAN Versus
+- `[4]` Join LAN Room (Interactive Room Browser)
+- `[5]` Local Co-op (1 Keyboard)
+- `[6]` Local Versus (1 Keyboard)
+- `[D]` / `←/→`: Cycle Difficulty (`Easy`, `Normal`, `Hard`, `Turbo`)
 - `[Q]` Quit
 
 ### In-Game Controls
 - **Solo & LAN Play**: Use `W/A/S/D` or Arrow Keys `↑/←/↓/→` (each player controls their own screen).
 - **Local 2-Player (Same Keyboard)**:
-  - **Player 1**: `W` (Up), `A` (Left), `S` (Down), `D` (Right)
-  - **Player 2**: `↑` (Up), `←` (Left), `↓` (Down), `→` (Right) or `I/J/K/L`
+  - **Player 1**: `W` (Up), `A` (Left), `S` (Down), `D` (Right), `R` (Vote Restart)
+  - **Player 2**: `↑` (Up), `←` (Left), `↓` (Down), `→` (Right) or `I/J/K/L`, `O` / `Enter` (Confirm Restart)
+- **LAN Multiplayer Restart**: Both players must press `R` on their own PC before a round resets (Versus keeps total round wins across restarts).
 - **Global**:
-  - `R`: Restart game
+  - `R`: Restart / Vote Restart
   - `Q` / `Esc`: Quit / Cancel
 
 ---

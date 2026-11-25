@@ -196,6 +196,26 @@ static int client_sock = -1;
 static int beacon_sock = -1;
 static uint32_t active_lan_seed = 424242;
 static uint32_t active_lan_diff = 1;
+static uint32_t active_lan_mode = 4;
+static char active_room_name[32] = "SnakeRoom";
+
+static void init_room_name(void) {
+  const char* env_name = getenv("SNAKE_ROOM_NAME");
+  char raw[64] = {0};
+  if (env_name && strlen(env_name) > 0) {
+    strncpy(raw, env_name, sizeof(raw) - 1);
+  } else if (gethostname(raw, sizeof(raw) - 1) != 0 || strlen(raw) == 0) {
+    strncpy(raw, "SnakeHost", sizeof(raw) - 1);
+  }
+  size_t out = 0;
+  for (size_t i = 0; raw[i] && out < 18; i++) {
+    unsigned char ch = (unsigned char)raw[i];
+    if (ch == ':' || ch < 32 || ch > 126) continue;
+    active_room_name[out++] = (char)ch;
+  }
+  active_room_name[out] = '\0';
+  if (out == 0) strncpy(active_room_name, "SnakeHost", sizeof(active_room_name) - 1);
+}
 
 static void get_network_ips(char* lan_ip, size_t lan_len, char* mesh_ip, size_t mesh_len) {
   strncpy(lan_ip, "127.0.0.1", lan_len);
@@ -253,10 +273,11 @@ static int recv_exact(int s, void* buf, size_t len, int timeout_ms) {
 }
 
 static void recv_lan_handshake(int s) {
-  uint32_t hs[2] = { 0, 1 };
+  uint32_t hs[3] = { 0, 1, active_lan_mode };
   if (recv_exact(s, hs, sizeof(hs), 1500) == 1) {
     if (hs[0] != 0) active_lan_seed = hs[0];
     active_lan_diff = hs[1];
+    if (hs[2] == 2 || hs[2] == 4) active_lan_mode = hs[2];
   }
 }
 
@@ -269,11 +290,16 @@ Term net_get_lan_diff_run(Env e, Term* f, IoWork* w) {
   return (Term)active_lan_diff;
 }
 
+Term net_set_lan_mode_run(Env e, Term* f, IoWork* w) {
+  active_lan_mode = (uint32_t)f[0];
+  return term_pak(CID(Unit), 0);
+}
+
 Term net_beacon_tick_run(Env e, Term* f, IoWork* w) {
   uint32_t mode = (uint32_t)f[0];
   if (beacon_sock >= 0) {
-    char msg[64];
-    snprintf(msg, sizeof(msg), "BSNK_ROOM:%u:%u:%u", mode, active_lan_seed, active_lan_diff);
+    char msg[128];
+    snprintf(msg, sizeof(msg), "BSNK_ROOM:%u:%u:%u:%s", mode, active_lan_seed, active_lan_diff, active_room_name);
 
     struct sockaddr_in baddr;
     memset(&baddr, 0, sizeof(baddr));
@@ -404,7 +430,6 @@ Term net_auto_join_run(Env e, Term* f, IoWork* w) {
   client_sock = s;
   return (Term)1;
 }
-
 Term net_listen_run(Env e, Term* f, IoWork* w) {
   uint32_t port = (uint32_t)f[0];
   if (server_sock >= 0) { close(server_sock); server_sock = -1; }
@@ -450,6 +475,7 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
 
   active_lan_seed = ((uint32_t)time(NULL) ^ ((uint32_t)getpid() << 16) ^ (uint32_t)rand()) & 0x7FFFFFFFu;
   if (active_lan_seed == 0) active_lan_seed = 1337;
+  init_room_name();
 
   char lan_ip[64] = "127.0.0.1";
   char mesh_ip[64] = "";
@@ -460,13 +486,15 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
   else if (active_lan_diff == 2) diff_name = "🔥 Hard (85ms)";
   else if (active_lan_diff == 3) diff_name = "⚡ Turbo (60ms)";
 
-  printf("\x1b[2J\x1b[H\x1b[1;36m📡 ROOM OPEN\x1b[0m  \x1b[90m│\x1b[0m  \x1b[1;37m%s\x1b[0m\n\n", diff_name);
+  const char* mode_name = (active_lan_mode == 2) ? "Co-op Snake" : "Versus Duel";
+
+  printf("\x1b[2J\x1b[H\x1b[1;36m📡 ROOM OPEN: %s\x1b[0m  \x1b[90m│\x1b[0m  \x1b[1;37m%s\x1b[0m  \x1b[90m│\x1b[0m  \x1b[1;37m%s\x1b[0m\n\n", active_room_name, mode_name, diff_name);
   printf("\x1b[1;32mBroadcasting room beacon to local network...\x1b[0m\n\n");
   printf("  • \x1b[1;37mLocal LAN IP:\x1b[0m   \x1b[1;33m%s\x1b[0m (Port: %u)\n", lan_ip, port);
   if (strlen(mesh_ip) > 0) {
     printf("  • \x1b[1;37mTailscale IP:\x1b[0m   \x1b[1;35m%s\x1b[0m (Port: %u) \x1b[90m(Play from anywhere!)\x1b[0m\n", mesh_ip, port);
   }
-  printf("\n\x1b[90mOther PCs on same Wi-Fi can join automatically with zero setup!\x1b[0m\n");
+  printf("\n\x1b[90mOther PCs can pick this room from 'Join LAN Room'!\x1b[0m\n");
   printf("\x1b[90mTip: If using a VPN (Nord/Mullvad/Proton), enable 'Allow LAN Traffic' or use Tailscale.\x1b[0m\n");
   printf("\x1b[90m(Press [Q] to cancel)\x1b[0m\n");
   fflush(stdout);
@@ -487,7 +515,7 @@ Term net_accept_run(Env e, Term* f, IoWork* w) {
   int flags = fcntl(s, F_GETFL, 0);
   fcntl(s, F_SETFL, flags | O_NONBLOCK);
   client_sock = s;
-  uint32_t hs[2] = { active_lan_seed, active_lan_diff };
+  uint32_t hs[3] = { active_lan_seed, active_lan_diff, active_lan_mode };
   send(client_sock, hs, sizeof(hs), MSG_NOSIGNAL);
   return (Term)1;
 }
@@ -607,6 +635,290 @@ Term net_prompt_join_run(Env e, Term* f, IoWork* w) {
   fcntl(s, F_SETFL, flags | O_NONBLOCK);
   client_sock = s;
   return (Term)1;
+}
+
+#define MAX_LAN_ROOMS 9
+
+typedef struct {
+  char ip[64];
+  struct in_addr addr;
+  char name[32];
+  uint32_t mode;
+  uint32_t seed;
+  uint32_t diff;
+  time_t last_seen;
+} LanRoom;
+
+static const char* browse_diff_str(uint32_t diff) {
+  switch (diff) {
+    case 0: return "\x1b[1;32mEasy (165ms) \x1b[0m";
+    case 2: return "\x1b[1;33mHard (85ms)  \x1b[0m";
+    case 3: return "\x1b[1;31mTurbo (60ms) \x1b[0m";
+    default: return "\x1b[1;36mNormal(120ms)\x1b[0m";
+  }
+}
+
+static void render_room_browser(const LanRoom* rooms, int count, int sel, const char* status_msg) {
+  printf("\x1b[H\x1b[2J\x1b[1;36m🌐  LAN ROOM BROWSER  🌐\x1b[0m   \x1b[90m(Live auto-scan)\x1b[0m\n");
+  printf("\x1b[38;5;39m╔═════╦═════════════╦═════════════════════════╦═══════════════╗\x1b[0m\n");
+  printf("\x1b[38;5;39m║\x1b[0m \x1b[1;37m # \x1b[0m \x1b[38;5;39m║\x1b[0m \x1b[1;37mMODE       \x1b[0m \x1b[38;5;39m║\x1b[0m \x1b[1;37mROOM / HOST            \x1b[0m \x1b[38;5;39m║\x1b[0m \x1b[1;37mSPEED        \x1b[0m \x1b[38;5;39m║\x1b[0m\n");
+  printf("\x1b[38;5;39m╠═════╬═════════════╬═════════════════════════╬═══════════════╣\x1b[0m\n");
+  if (count == 0) {
+    printf("\x1b[38;5;39m║\x1b[0m  \x1b[90mSearching for rooms on local network...                   \x1b[0m \x1b[38;5;39m║\x1b[0m\n");
+    printf("\x1b[38;5;39m║\x1b[0m  \x1b[90mStart Host LAN Co-op or Versus on another PC!             \x1b[0m \x1b[38;5;39m║\x1b[0m\n");
+  } else {
+    for (int i = 0; i < count; i++) {
+      const char* arrow = (i == sel) ? "\x1b[1;33m>\x1b[0m" : " ";
+      const char* mode_str = (rooms[i].mode == 2)
+        ? "\x1b[1;36mCo-op Snake\x1b[0m"
+        : "\x1b[1;35mVersus Duel\x1b[0m";
+      char label[64];
+      size_t ip_len = strlen(rooms[i].ip);
+      int max_name = 23 - 3 - (int)ip_len;
+      if (max_name < 3) max_name = 3;
+      snprintf(label, sizeof(label), "%.*s (%s)", max_name, rooms[i].name, rooms[i].ip);
+      printf("\x1b[38;5;39m║\x1b[0m %s\x1b[1;37m%d\x1b[0m  \x1b[38;5;39m║\x1b[0m %s \x1b[38;5;39m║\x1b[0m %-23.23s \x1b[38;5;39m║\x1b[0m %s \x1b[38;5;39m║\x1b[0m\n",
+             arrow, i + 1, mode_str, label, browse_diff_str(rooms[i].diff));
+    }
+  }
+  printf("\x1b[38;5;39m╚═════╩═════════════╩═════════════════════════╩═══════════════╝\x1b[0m\n");
+  if (status_msg && status_msg[0]) {
+    printf("%s\n", status_msg);
+  }
+  printf("\n  \x1b[1;33m[1-9 / Enter]\x1b[0m Join Room   \x1b[1;33m[↑/↓]\x1b[0m Move   \x1b[1;33m[R]\x1b[0m Rescan   \x1b[1;33m[M]\x1b[0m Manual IP   \x1b[1;31m[Q]\x1b[0m Back\n");
+  fflush(stdout);
+}
+
+static int connect_to_lan_room(const LanRoom* room, uint32_t port) {
+  if (client_sock >= 0) { close(client_sock); client_sock = -1; }
+  int s = socket(AF_INET, SOCK_STREAM, 0);
+  if (s < 0) return 0;
+
+  struct sockaddr_in tcp_addr;
+  memset(&tcp_addr, 0, sizeof(tcp_addr));
+  tcp_addr.sin_family = AF_INET;
+  tcp_addr.sin_port = htons((uint16_t)port);
+  tcp_addr.sin_addr = room->addr;
+
+  if (connect(s, (struct sockaddr*)&tcp_addr, sizeof(tcp_addr)) < 0) {
+    close(s);
+    return 0;
+  }
+
+  active_lan_seed = room->seed;
+  active_lan_diff = room->diff;
+  active_lan_mode = room->mode;
+  set_tcp_nodelay(s);
+  recv_lan_handshake(s);
+
+  int flags = fcntl(s, F_GETFL, 0);
+  fcntl(s, F_SETFL, flags | O_NONBLOCK);
+  client_sock = s;
+  return 1;
+}
+
+static void parse_and_upsert_room(LanRoom* rooms, int* count, const char* buf, struct sockaddr_in* sender) {
+  // Format: BSNK_ROOM:<mode>:<seed>:<diff>:<room_name>
+  if (strncmp(buf, "BSNK_ROOM:", 10) != 0) return;
+  uint32_t r_mode = 4, r_seed = 424242, r_diff = 1;
+  char r_name[32] = "SnakeRoom";
+
+  char copy[128];
+  strncpy(copy, buf + 10, sizeof(copy) - 1);
+  copy[sizeof(copy) - 1] = '\0';
+
+  char* p1 = strchr(copy, ':');
+  if (p1) {
+    *p1 = '\0';
+    r_mode = (uint32_t)strtoul(copy, NULL, 10);
+    char* p2 = strchr(p1 + 1, ':');
+    if (p2) {
+      *p2 = '\0';
+      r_seed = (uint32_t)strtoul(p1 + 1, NULL, 10);
+      char* p3 = strchr(p2 + 1, ':');
+      if (p3) {
+        *p3 = '\0';
+        r_diff = (uint32_t)strtoul(p2 + 1, NULL, 10);
+        if (strlen(p3 + 1) > 0) {
+          strncpy(r_name, p3 + 1, sizeof(r_name) - 1);
+        }
+      } else {
+        r_diff = (uint32_t)strtoul(p2 + 1, NULL, 10);
+      }
+    } else {
+      r_seed = (uint32_t)strtoul(p1 + 1, NULL, 10);
+    }
+  } else {
+    r_mode = (uint32_t)strtoul(copy, NULL, 10);
+  }
+  if (r_mode != 2 && r_mode != 4) return;
+
+  char ip_str[64] = {0};
+  inet_ntop(AF_INET, &sender->sin_addr, ip_str, sizeof(ip_str));
+  time_t now = time(NULL);
+
+  // Deduplicate by seed+mode (handles loopback + LAN interface multi-homing cleanly)
+  for (int i = 0; i < *count; i++) {
+    if ((rooms[i].seed == r_seed && rooms[i].mode == r_mode) ||
+        (strcmp(rooms[i].ip, ip_str) == 0 && rooms[i].mode == r_mode)) {
+      // Prefer non-loopback address when same host broadcasts on multiple interfaces
+      if (strcmp(ip_str, "127.0.0.1") != 0 || strcmp(rooms[i].ip, "127.0.0.1") == 0) {
+        strncpy(rooms[i].ip, ip_str, sizeof(rooms[i].ip) - 1);
+        rooms[i].addr = sender->sin_addr;
+      }
+      strncpy(rooms[i].name, r_name, sizeof(rooms[i].name) - 1);
+      rooms[i].seed = r_seed;
+      rooms[i].diff = r_diff;
+      rooms[i].last_seen = now;
+      return;
+    }
+  }
+
+  if (*count < MAX_LAN_ROOMS) {
+    LanRoom* r = &rooms[*count];
+    memset(r, 0, sizeof(*r));
+    strncpy(r->ip, ip_str, sizeof(r->ip) - 1);
+    r->addr = sender->sin_addr;
+    strncpy(r->name, r_name, sizeof(r->name) - 1);
+    r->mode = r_mode;
+    r->seed = r_seed;
+    r->diff = r_diff;
+    r->last_seen = now;
+    (*count)++;
+  }
+}
+
+Term net_browse_join_run(Env e, Term* f, IoWork* w) {
+  uint32_t port = 4242;
+  int lsock = socket(AF_INET, SOCK_DGRAM, 0);
+  if (lsock < 0) {
+    Term port_arg[1] = { (Term)port };
+    if (net_prompt_join_run(e, port_arg, w) == (Term)1) return (Term)active_lan_mode;
+    return (Term)0;
+  }
+
+  int opt = 1;
+  setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#ifdef SO_REUSEPORT
+  setsockopt(lsock, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt));
+#endif
+  setsockopt(lsock, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
+
+  int uflags = fcntl(lsock, F_GETFL, 0);
+  fcntl(lsock, F_SETFL, uflags | O_NONBLOCK);
+
+  struct sockaddr_in laddr;
+  memset(&laddr, 0, sizeof(laddr));
+  laddr.sin_family = AF_INET;
+  laddr.sin_port = htons(4243);
+  laddr.sin_addr.s_addr = INADDR_ANY;
+
+  if (bind(lsock, (struct sockaddr*)&laddr, sizeof(laddr)) < 0) {
+    close(lsock);
+    Term port_arg[1] = { (Term)port };
+    if (net_prompt_join_run(e, port_arg, w) == (Term)1) return (Term)active_lan_mode;
+    return (Term)0;
+  }
+
+  LanRoom rooms[MAX_LAN_ROOMS];
+  int count = 0;
+  int sel = 0;
+  char status_msg[128] = "";
+
+  while (1) {
+    // 1. Drain incoming beacons
+    while (1) {
+      char buf[160] = {0};
+      struct sockaddr_in sender;
+      socklen_t slen = sizeof(sender);
+      ssize_t n = recvfrom(lsock, buf, sizeof(buf) - 1, 0, (struct sockaddr*)&sender, &slen);
+      if (n <= 0) break;
+      buf[n] = '\0';
+      parse_and_upsert_room(rooms, &count, buf, &sender);
+    }
+
+    // 2. Expire rooms silent for > 3 seconds
+    time_t now = time(NULL);
+    for (int i = 0; i < count; ) {
+      if (difftime(now, rooms[i].last_seen) > 3.0) {
+        for (int j = i; j < count - 1; j++) rooms[j] = rooms[j + 1];
+        count--;
+      } else {
+        i++;
+      }
+    }
+    if (sel >= count) sel = (count > 0) ? count - 1 : 0;
+
+    // 3. Render UI
+    render_room_browser(rooms, count, sel, status_msg);
+
+    // 4. Wait for either UDP packet or keyboard input
+    struct pollfd pfds[2] = {
+      { .fd = lsock, .events = POLLIN, .revents = 0 },
+      { .fd = STDIN_FILENO, .events = POLLIN, .revents = 0 }
+    };
+    int ret = poll(pfds, 2, 200);
+    if (ret > 0 && (pfds[1].revents & POLLIN)) {
+      unsigned char ch = 0;
+      if (read(STDIN_FILENO, &ch, 1) > 0) {
+        if (ch == 27) {
+          unsigned char seq[2] = {0, 0};
+          if (read(STDIN_FILENO, &seq[0], 1) > 0 && read(STDIN_FILENO, &seq[1], 1) > 0 && seq[0] == '[') {
+            if (seq[1] == 'A' && count > 0) sel = (sel + count - 1) % count;
+            else if (seq[1] == 'B' && count > 0) sel = (sel + 1) % count;
+            continue;
+          }
+          close(lsock);
+          return (Term)0;
+        }
+        if (ch == 'q' || ch == 'Q') {
+          close(lsock);
+          return (Term)0;
+        }
+        if (ch == 'r' || ch == 'R') {
+          count = 0;
+          sel = 0;
+          snprintf(status_msg, sizeof(status_msg), "\x1b[90mRescanning LAN...\x1b[0m");
+          continue;
+        }
+        if (ch == 'm' || ch == 'M') {
+          close(lsock);
+          Term port_arg[1] = { (Term)port };
+          if (net_prompt_join_run(e, port_arg, w) == (Term)1) {
+            return (Term)active_lan_mode;
+          }
+          return (Term)0;
+        }
+        if ((ch == 'w' || ch == 'W' || ch == 'k' || ch == 'K') && count > 0) {
+          sel = (sel + count - 1) % count;
+          continue;
+        }
+        if ((ch == 's' || ch == 'S' || ch == 'j' || ch == 'J') && count > 0) {
+          sel = (sel + 1) % count;
+          continue;
+        }
+        int pick = -1;
+        if (ch >= '1' && ch <= '9') {
+          int idx = (int)(ch - '1');
+          if (idx < count) pick = idx;
+        } else if ((ch == '\n' || ch == '\r') && count > 0) {
+          pick = sel;
+        }
+        if (pick >= 0) {
+          if (connect_to_lan_room(&rooms[pick], port)) {
+            close(lsock);
+            return (Term)active_lan_mode;
+          } else {
+            snprintf(status_msg, sizeof(status_msg), "\x1b[1;31mCould not connect to %s (%s). Room may have closed.\x1b[0m",
+                     rooms[pick].name, strerror(errno));
+            for (int j = pick; j < count - 1; j++) rooms[j] = rooms[j + 1];
+            count--;
+            if (sel >= count) sel = (count > 0) ? count - 1 : 0;
+          }
+        }
+      }
+    }
+  }
 }
 
 Term net_send_key_run(Env e, Term* f, IoWork* w) {
@@ -895,8 +1207,6 @@ static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(save_high_score), save_high_score_run);
   io_eff(CID(net_listen), net_listen_run);
   io_eff(CID(net_accept), net_accept_run);
-  io_eff(CID(net_prompt_join), net_prompt_join_run);
-  io_eff(CID(net_auto_join), net_auto_join_run);
   io_eff(CID(net_beacon_tick), net_beacon_tick_run);
   io_eff(CID(net_send_key), net_send_key_run);
   io_eff(CID(net_recv_key), net_recv_key_run);
@@ -905,4 +1215,6 @@ static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(check_update), check_update_run);
   io_eff(CID(net_set_lan_diff), net_set_lan_diff_run);
   io_eff(CID(net_get_lan_diff), net_get_lan_diff_run);
+  io_eff(CID(net_set_lan_mode), net_set_lan_mode_run);
+  io_eff(CID(net_browse_join), net_browse_join_run);
 }

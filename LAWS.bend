@@ -167,3 +167,32 @@ law diff_turbo_base:
 
 law diff_normal_floor:
   {Snake.calc_tick_ms(Snake.Normal{}, 1000) == 75 : U32}
+
+law restart_requires_both_p1_only:
+  {Snake.both_restart(Snake.vote_restart(Snake.restart_none(), True{}, False{})) == False{} : Bool}
+
+law restart_requires_both_p2_only:
+  {Snake.both_restart(Snake.vote_restart(Snake.restart_none(), False{}, True{})) == False{} : Bool}
+
+law restart_works_when_both:
+  {Snake.both_restart(Snake.vote_restart(Snake.vote_restart(Snake.restart_none(), True{}, False{}), False{}, True{})) == True{} : Bool}
+
+law versus_new_starts_zero_wins1:
+  for seed: U32
+  {Snake.get_versus_wins1(Snake.new_versus_game(seed)) == 0 : U32}
+
+law versus_new_starts_zero_wins2:
+  for seed: U32
+  {Snake.get_versus_wins2(Snake.new_versus_game(seed)) == 0 : U32}
+
+law versus_restart_preserves_wins1:
+  for seed: U32
+  for w1: U32
+  for w2: U32
+  {Snake.get_versus_wins1(Snake.restart_versus_game(Snake.new_versus_game_match(seed, w1, w2))) == w1 : U32}
+
+law versus_restart_preserves_wins2:
+  for seed: U32
+  for w1: U32
+  for w2: U32
+  {Snake.get_versus_wins2(Snake.restart_versus_game(Snake.new_versus_game_match(seed, w1, w2))) == w2 : U32}

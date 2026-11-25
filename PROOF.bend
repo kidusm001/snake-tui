@@ -183,3 +183,24 @@ def Laws.diff_turbo_base():
 
 def Laws.diff_normal_floor():
   {==}
+
+def Laws.restart_requires_both_p1_only():
+  {==}
+
+def Laws.restart_requires_both_p2_only():
+  {==}
+
+def Laws.restart_works_when_both():
+  {==}
+
+def Laws.versus_new_starts_zero_wins1(seed):
+  {==}
+
+def Laws.versus_new_starts_zero_wins2(seed):
+  {==}
+
+def Laws.versus_restart_preserves_wins1(seed, w1, w2):
+  {==}
+
+def Laws.versus_restart_preserves_wins2(seed, w1, w2):
+  {==}
