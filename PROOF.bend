@@ -135,3 +135,51 @@ def Laws.versus_outcome_draw():
 
 def Laws.versus_new_game_active(seed):
   {==}
+
+def Laws.diff_cycle_4(d):
+  match d:
+    case Snake.Easy{}:
+      {==}
+    case Snake.Normal{}:
+      {==}
+    case Snake.Hard{}:
+      {==}
+    case Snake.Turbo{}:
+      {==}
+
+def Laws.diff_next_prev(d):
+  match d:
+    case Snake.Easy{}:
+      {==}
+    case Snake.Normal{}:
+      {==}
+    case Snake.Hard{}:
+      {==}
+    case Snake.Turbo{}:
+      {==}
+
+def Laws.diff_roundtrip(d):
+  match d:
+    case Snake.Easy{}:
+      {==}
+    case Snake.Normal{}:
+      {==}
+    case Snake.Hard{}:
+      {==}
+    case Snake.Turbo{}:
+      {==}
+
+def Laws.diff_easy_steady(score):
+  {==}
+
+def Laws.diff_normal_base():
+  {==}
+
+def Laws.diff_hard_base():
+  {==}
+
+def Laws.diff_turbo_base():
+  {==}
+
+def Laws.diff_normal_floor():
+  {==}

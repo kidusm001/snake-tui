@@ -12,11 +12,19 @@ def poll_key() -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
 
-def load_high_score() -> IO(U32):
+def load_high_score(diff: U32) -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
 
-def save_high_score(score: U32) -> IO(Unit):
+def save_high_score(score: U32, diff: U32) -> IO(Unit):
+  import "./terminal.c"
+  import "./terminal.js"
+
+def net_set_lan_diff(diff: U32) -> IO(Unit):
+  import "./terminal.c"
+  import "./terminal.js"
+
+def net_get_lan_diff() -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
 

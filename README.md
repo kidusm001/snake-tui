@@ -68,6 +68,12 @@ You don't need port forwarding, router configuration, or even to be on the same 
 ## Features
 
 - **Pure Functional Logic**: The core game mechanics in [`snake.bend`](file:///home/Kidus.Mesfin/workspace/github.com/kidusm001/snake-tui/snake.bend) are 100% pure, deterministic, and formally verified.
+- **4 Difficulty Levels (`[D]` / `←/→`)**:
+  - `🐢 Easy` (165ms steady pace)
+  - `🐍 Normal` (120ms, progressively speeds up to 75ms)
+  - `🔥 Hard` (85ms, accelerates to 55ms)
+  - `⚡ Turbo` (60ms, extreme acceleration to 40ms)
+  - Separate per-difficulty binary high scores + automatic difficulty sync for LAN Host & Join!
 - **Multiple Game Modes**:
   - **Solo Classic**: Traditional 1-player high score chase with persistent binary records.
   - **Co-op Mode (2 Players, 1 Snake)**: Two players steer the same snake cooperatively! Playable over LAN or on the same keyboard.

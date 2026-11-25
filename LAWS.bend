@@ -139,3 +139,31 @@ law versus_outcome_draw:
 law versus_new_game_active:
   for seed: U32
   {Snake.is_versus_over(Snake.new_versus_game(seed)) == False{} : Bool}
+
+law diff_cycle_4:
+  for d: Snake.Diff
+  {Snake.next_diff(Snake.next_diff(Snake.next_diff(Snake.next_diff(d)))) == d : Snake.Diff}
+
+law diff_next_prev:
+  for d: Snake.Diff
+  {Snake.prev_diff(Snake.next_diff(d)) == d : Snake.Diff}
+
+law diff_roundtrip:
+  for d: Snake.Diff
+  {Snake.u32_to_diff(Snake.diff_to_u32(d)) == d : Snake.Diff}
+
+law diff_easy_steady:
+  for score: U32
+  {Snake.calc_tick_ms(Snake.Easy{}, score) == 165 : U32}
+
+law diff_normal_base:
+  {Snake.calc_tick_ms(Snake.Normal{}, 0) == 120 : U32}
+
+law diff_hard_base:
+  {Snake.calc_tick_ms(Snake.Hard{}, 0) == 85 : U32}
+
+law diff_turbo_base:
+  {Snake.calc_tick_ms(Snake.Turbo{}, 0) == 60 : U32}
+
+law diff_normal_floor:
+  {Snake.calc_tick_ms(Snake.Normal{}, 1000) == 75 : U32}

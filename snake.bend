@@ -6,6 +6,95 @@ type Dir is Data:
   Left{}
   Right{}
 
+type Diff is Data:
+  Easy{}
+  Normal{}
+  Hard{}
+  Turbo{}
+
+def next_diff(d: Diff) -> Diff:
+  match d:
+    case Easy{}:
+      Normal{}
+    case Normal{}:
+      Hard{}
+    case Hard{}:
+      Turbo{}
+    case Turbo{}:
+      Easy{}
+
+def prev_diff(d: Diff) -> Diff:
+  match d:
+    case Easy{}:
+      Turbo{}
+    case Normal{}:
+      Easy{}
+    case Hard{}:
+      Normal{}
+    case Turbo{}:
+      Hard{}
+
+def diff_to_u32(d: Diff) -> U32:
+  match d:
+    case Easy{}:
+      0
+    case Normal{}:
+      1
+    case Hard{}:
+      2
+    case Turbo{}:
+      3
+
+def u32_to_diff(+n: U32) -> Diff:
+  match n:
+    case 0:
+      Easy{}
+    case 1:
+      Normal{}
+    case 2:
+      Hard{}
+    case 3:
+      Turbo{}
+    case _:
+      Normal{}
+
+def min_u32_select(+a: U32, +b: U32, a_le_b: Bool) -> U32:
+  match a_le_b:
+    case True{}:
+      a
+    case False{}:
+      b
+
+def min_u32(+a: U32, +b: U32) -> U32:
+  min_u32_select(a, b, (a <= b : U32))
+
+def tick_clamp(+base: U32, +drop: U32, +floor_ms: U32) -> U32:
+  max_drop = (base - floor_ms : U32)
+  use_drop = min_u32(drop, max_drop)
+  (base - use_drop : U32)
+
+def calc_tick_ms(d: Diff, +score: U32) -> U32:
+  match d:
+    case Easy{}:
+      165
+    case Normal{}:
+      tick_clamp(120, (score / 10 : U32), 75)
+    case Hard{}:
+      tick_clamp(85, (score / 8 : U32), 55)
+    case Turbo{}:
+      tick_clamp(60, (score / 8 : U32), 40)
+
+def diff_badge(d: Diff) -> String:
+  match d:
+    case Easy{}:
+      "\u{1b}[1;32m[🐢 Easy]\u{1b}[0m"
+    case Normal{}:
+      "\u{1b}[1;36m[🐍 Normal]\u{1b}[0m"
+    case Hard{}:
+      "\u{1b}[1;33m[🔥 Hard]\u{1b}[0m"
+    case Turbo{}:
+      "\u{1b}[1;31m[⚡ Turbo]\u{1b}[0m"
+
 type Pos is Data:
   Pos{x: U32, y: U32}
 
@@ -294,9 +383,10 @@ def render_status(alive: Bool, +score: U32, +high_score: U32) -> String:
       is_new = (score >= high_score : U32) && (score > 0 : U32)
       render_game_over(is_new, score, high_score)
 
-def render_frame(g: GameState, +w_nat: Nat) -> String:
+def render_frame(g: GameState, +w_nat: Nat, d: Diff) -> String:
   Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
-  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\u{1b}[K\n" : String}
+  badge = diff_badge(d)
+  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m   " ++ badge ++ "\u{1b}[K\n" : String}
   border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
   border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
   grid = render_grid_par(w_nat, head, food, body, alive)
@@ -329,9 +419,10 @@ def render_coop_status(alive: Bool, +score: U32, +high_score: U32) -> String:
       is_new = (score >= high_score : U32) && (score > 0 : U32)
       render_game_over(is_new, score, high_score)
 
-def render_coop_frame(g: GameState, +w_nat: Nat) -> String:
+def render_coop_frame(g: GameState, +w_nat: Nat, d: Diff) -> String:
   Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
-  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE CO-OP (2 PLAYERS, 1 SNAKE)  🐍\u{1b}[0m\u{1b}[K\n" : String}
+  badge = diff_badge(d)
+  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE CO-OP (2 PLAYERS, 1 SNAKE)  🐍\u{1b}[0m   " ++ badge ++ "\u{1b}[K\n" : String}
   border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
   border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
   grid = render_grid_par(w_nat, head, food, body, alive)
@@ -575,16 +666,33 @@ def render_versus_status(winner: VersusWinner, +s1: U32, +s2: U32) -> String:
     case Draw{}:
       "\u{1b}[1;31m⚔️ MUTUAL CRASH - DRAW! ⚔️\u{1b}[0m  Final: " ++ U32.show(s1) ++ " - " ++ U32.show(s2) ++ "   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Play Again  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
 
-def render_versus_frame(vg: VersusState, +w_nat: Nat) -> String:
+def get_versus_max_score(vg: VersusState) -> U32:
   VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, +seed} = vg
-  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE VERSUS (2 SNAKES DUEL)  🐍\u{1b}[0m\u{1b}[K\n" : String}
+  max_score(s1, s2)
+
+def render_versus_frame(vg: VersusState, +w_nat: Nat, d: Diff) -> String:
+  VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, +seed} = vg
+  badge = diff_badge(d)
+  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE VERSUS (2 SNAKES DUEL)  🐍\u{1b}[0m   " ++ badge ++ "\u{1b}[K\n" : String}
   border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
   border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
   grid = render_versus_grid_par(w_nat, h1, b1, a1, h2, b2, a2, food)
   status = render_versus_status(winner, s1, s2)
   (header ++ status) ++ (border_top ++ grid ++ border_bot)
 
-def render_menu() -> String:
+def diff_menu_line(d: Diff) -> String:
+  match d:
+    case Easy{}:
+      "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[D]\u{1b}[0m \u{1b}[1;37mSpeed:\u{1b}[0m \u{1b}[1;32m🐢 Easy\u{1b}[0m   \u{1b}[90m(165ms, Steady)\u{1b}[0m          \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+    case Normal{}:
+      "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[D]\u{1b}[0m \u{1b}[1;37mSpeed:\u{1b}[0m \u{1b}[1;36m🐍 Normal\u{1b}[0m \u{1b}[90m(120ms -> 75ms)\u{1b}[0m          \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+    case Hard{}:
+      "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[D]\u{1b}[0m \u{1b}[1;37mSpeed:\u{1b}[0m \u{1b}[1;33m🔥 Hard\u{1b}[0m   \u{1b}[90m(85ms  -> 55ms)\u{1b}[0m          \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+    case Turbo{}:
+      "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[D]\u{1b}[0m \u{1b}[1;37mSpeed:\u{1b}[0m \u{1b}[1;31m⚡ Turbo\u{1b}[0m  \u{1b}[90m(60ms  -> 40ms)\u{1b}[0m          \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+
+def render_menu(d: Diff) -> String:
+  dline = diff_menu_line(d)
   "\u{1b}[H\u{1b}[2J\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\u{1b}[K\n" ++
   "\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" ++
   "\u{1b}[38;5;39m║\u{1b}[0m          \u{1b}[1;37mCHOOSE GAME MODE & MULTIPLAYER\u{1b}[0m        \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
@@ -600,8 +708,9 @@ def render_menu() -> String:
   "\u{1b}[38;5;39m║\u{1b}[0m                                                \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
   "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[6]\u{1b}[0m \u{1b}[1;37mLocal Co-op\u{1b}[0m     - 1 keyboard (WASD/Arrows)\u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
   "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[7]\u{1b}[0m \u{1b}[1;37mLocal Versus\u{1b}[0m    - 1 keyboard (WASD/Arrows)\u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m                                                \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
+  "\u{1b}[38;5;39m╠════════════════════════════════════════════════╣\u{1b}[0m\u{1b}[K\n" ++
+  dline ++
   "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;31m[Q]\u{1b}[0m \u{1b}[1;37mQuit Game\u{1b}[0m                                 \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
   "\u{1b}[38;5;39m╠════════════════════════════════════════════════╣\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[90mDefault Port: 4242   │   [1-7, Q] to Select\u{1b}[0m   \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\n\n\u{1b}[1;37mSelect an option [1-7, Q]: \u{1b}[0m\u{1b}[K"
+  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[90mDefault Port: 4242  │  [1-7, D, ←/→, Q]\u{1b}[0m       \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
+  "\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\n\n\u{1b}[1;37mSelect an option [1-7, D, Q]: \u{1b}[0m\u{1b}[K"

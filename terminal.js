@@ -66,11 +66,19 @@ function bsnk_checksum(score) {
   return ((score ^ 0xA5A5A5A5) + BSNK_SALT) >>> 0;
 }
 
-function load_high_score() {
+function high_score_file(diff) {
+  if (diff === 0) return "highscore_easy.bin";
+  if (diff === 2) return "highscore_hard.bin";
+  if (diff === 3) return "highscore_turbo.bin";
+  return "highscore.bin";
+}
+
+function load_high_score(diff) {
   try {
     const fs = require("fs");
-    if (fs.existsSync("highscore.bin")) {
-      const buf = fs.readFileSync("highscore.bin");
+    const fname = high_score_file(diff);
+    if (fs.existsSync(fname)) {
+      const buf = fs.readFileSync(fname);
       if (buf.length === 16) {
         const magic = buf.readUInt32LE(0);
         const version = buf.readUInt16LE(4);
@@ -83,11 +91,11 @@ function load_high_score() {
           }
         }
       }
-    } else if (fs.existsSync("highscore.txt")) {
+    } else if (diff === 1 && fs.existsSync("highscore.txt")) {
       const txt = fs.readFileSync("highscore.txt", "utf8").trim();
       const n = parseInt(txt, 10);
       if (!isNaN(n) && n >= 0) {
-        save_high_score(n >>> 0);
+        save_high_score(n >>> 0, diff);
         try { fs.unlinkSync("highscore.txt"); } catch (_) {}
         return n >>> 0;
       }
@@ -96,16 +104,16 @@ function load_high_score() {
   return 0;
 }
 
-function save_high_score(score) {
+function save_high_score(score, diff) {
   try {
     const fs = require("fs");
     const buf = Buffer.alloc(16);
     buf.writeUInt32LE(BSNK_MAGIC, 0);
     buf.writeUInt16LE(1, 4);
-    buf.writeUInt16LE(0, 6);
+    buf.writeUInt16LE((diff || 0) & 0xFFFF, 6);
     buf.writeUInt32LE((score ^ BSNK_MASK) >>> 0, 8);
     buf.writeUInt32LE(bsnk_checksum(score), 12);
-    fs.writeFileSync("highscore.bin", buf);
+    fs.writeFileSync(high_score_file(diff), buf);
   } catch (e) {}
   return {$: CID(Unit)};
 }
@@ -226,6 +234,17 @@ function get_random_seed() {
   return s === 0 ? 1337 : s;
 }
 
+let lanDiff = 1;
+
+function net_set_lan_diff(diff) {
+  lanDiff = diff >>> 0;
+  return {$: CID(Unit)};
+}
+
+function net_get_lan_diff() {
+  return lanDiff >>> 0;
+}
+
 function check_update() {
   return {$: CID(Unit)};
 }
@@ -249,3 +268,5 @@ io_eff(CID(net_recv_key), net_recv_key);
 io_eff(CID(net_close), net_close);
 io_eff(CID(get_random_seed), get_random_seed);
 io_eff(CID(check_update), check_update);
+io_eff(CID(net_set_lan_diff), net_set_lan_diff);
+io_eff(CID(net_get_lan_diff), net_get_lan_diff);

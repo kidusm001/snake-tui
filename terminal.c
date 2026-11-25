@@ -107,16 +107,26 @@ static void get_data_file(const char* name, char* out, size_t outlen) {
   snprintf(out, outlen, "%s/%s", dir, name);
 }
 
+static const char* high_score_filename(uint32_t diff) {
+  switch (diff) {
+    case 0: return "highscore_easy.bin";
+    case 2: return "highscore_hard.bin";
+    case 3: return "highscore_turbo.bin";
+    default: return "highscore.bin";
+  }
+}
+
 Term save_high_score_run(Env e, Term* f, IoWork* w) {
   uint32_t s = (uint32_t)f[0];
+  uint32_t diff = (uint32_t)f[1];
   char path[600];
-  get_data_file("highscore.bin", path, sizeof(path));
+  get_data_file(high_score_filename(diff), path, sizeof(path));
   FILE* fp = fopen(path, "wb");
   if (fp) {
     struct HighScoreRecord rec;
     rec.magic = BSNK_MAGIC;
     rec.version = 1;
-    rec.flags = 0;
+    rec.flags = (uint16_t)diff;
     rec.masked_score = s ^ BSNK_MASK;
     rec.checksum = bsnk_checksum(s);
     fwrite(&rec, sizeof(rec), 1, fp);
@@ -126,37 +136,40 @@ Term save_high_score_run(Env e, Term* f, IoWork* w) {
 }
 
 Term load_high_score_run(Env e, Term* f, IoWork* w) {
+  uint32_t diff = (uint32_t)f[0];
   char path[600];
-  get_data_file("highscore.bin", path, sizeof(path));
+  get_data_file(high_score_filename(diff), path, sizeof(path));
   FILE* fp = fopen(path, "rb");
   if (!fp) {
-    // Migrate legacy highscore.bin or highscore.txt from current working directory
-    FILE* cwd_fp = fopen("highscore.bin", "rb");
-    if (cwd_fp) {
-      struct HighScoreRecord old_rec;
-      if (fread(&old_rec, sizeof(old_rec), 1, cwd_fp) == 1 &&
-          old_rec.magic == BSNK_MAGIC && old_rec.version == 1) {
-        uint32_t old_s = old_rec.masked_score ^ BSNK_MASK;
-        if (old_rec.checksum == bsnk_checksum(old_s)) {
-          fclose(cwd_fp);
-          Term args[1] = { (Term)old_s };
+    if (diff == 1) {
+      // Migrate legacy Normal highscore.bin or highscore.txt from current working directory
+      FILE* cwd_fp = fopen("highscore.bin", "rb");
+      if (cwd_fp) {
+        struct HighScoreRecord old_rec;
+        if (fread(&old_rec, sizeof(old_rec), 1, cwd_fp) == 1 &&
+            old_rec.magic == BSNK_MAGIC && old_rec.version == 1) {
+          uint32_t old_s = old_rec.masked_score ^ BSNK_MASK;
+          if (old_rec.checksum == bsnk_checksum(old_s)) {
+            fclose(cwd_fp);
+            Term args[2] = { (Term)old_s, (Term)diff };
+            save_high_score_run(e, args, w);
+            return (Term)old_s;
+          }
+        }
+        fclose(cwd_fp);
+      }
+      FILE* old_fp = fopen("highscore.txt", "r");
+      if (old_fp) {
+        uint32_t old_s = 0;
+        if (fscanf(old_fp, "%u", &old_s) == 1) {
+          fclose(old_fp);
+          unlink("highscore.txt");
+          Term args[2] = { (Term)old_s, (Term)diff };
           save_high_score_run(e, args, w);
           return (Term)old_s;
         }
-      }
-      fclose(cwd_fp);
-    }
-    FILE* old_fp = fopen("highscore.txt", "r");
-    if (old_fp) {
-      uint32_t old_s = 0;
-      if (fscanf(old_fp, "%u", &old_s) == 1) {
         fclose(old_fp);
-        unlink("highscore.txt");
-        Term args[1] = { (Term)old_s };
-        save_high_score_run(e, args, w);
-        return (Term)old_s;
       }
-      fclose(old_fp);
     }
     return (Term)0;
   }
@@ -181,6 +194,7 @@ static int server_sock = -1;
 static int client_sock = -1;
 static int beacon_sock = -1;
 static uint32_t active_lan_seed = 424242;
+static uint32_t active_lan_diff = 1;
 
 static void get_network_ips(char* lan_ip, size_t lan_len, char* mesh_ip, size_t mesh_len) {
   strncpy(lan_ip, "127.0.0.1", lan_len);
@@ -214,11 +228,34 @@ static void get_network_ips(char* lan_ip, size_t lan_len, char* mesh_ip, size_t 
   }
 }
 
+static void recv_lan_handshake(int s) {
+  struct pollfd pfd = { .fd = s, .events = POLLIN, .revents = 0 };
+  if (poll(&pfd, 1, 1000) > 0) {
+    uint32_t hs[2] = { 0, 1 };
+    ssize_t n = recv(s, hs, sizeof(hs), 0);
+    if (n >= (ssize_t)sizeof(uint32_t) && hs[0] != 0) {
+      active_lan_seed = hs[0];
+    }
+    if (n == (ssize_t)sizeof(hs)) {
+      active_lan_diff = hs[1];
+    }
+  }
+}
+
+Term net_set_lan_diff_run(Env e, Term* f, IoWork* w) {
+  active_lan_diff = (uint32_t)f[0];
+  return term_pak(CID(Unit), 0);
+}
+
+Term net_get_lan_diff_run(Env e, Term* f, IoWork* w) {
+  return (Term)active_lan_diff;
+}
+
 Term net_beacon_tick_run(Env e, Term* f, IoWork* w) {
   uint32_t mode = (uint32_t)f[0];
   if (beacon_sock >= 0) {
     char msg[64];
-    snprintf(msg, sizeof(msg), "BSNK_ROOM:%u:%u", mode, active_lan_seed);
+    snprintf(msg, sizeof(msg), "BSNK_ROOM:%u:%u:%u", mode, active_lan_seed, active_lan_diff);
 
     struct sockaddr_in baddr;
     memset(&baddr, 0, sizeof(baddr));
@@ -292,9 +329,14 @@ Term net_auto_join_run(Env e, Term* f, IoWork* w) {
         if (strncmp(buf, "BSNK_ROOM:", 10) == 0) {
           uint32_t r_mode = (uint32_t)atoi(buf + 10);
           if (r_mode == target_mode || target_mode == 0) {
+            active_lan_diff = 1;
             char* s_seed = strchr(buf + 10, ':');
             if (s_seed) {
               active_lan_seed = (uint32_t)strtoul(s_seed + 1, NULL, 10);
+              char* s_diff = strchr(s_seed + 1, ':');
+              if (s_diff) {
+                active_lan_diff = (uint32_t)strtoul(s_diff + 1, NULL, 10);
+              }
             }
             inet_ntop(AF_INET, &sender_addr.sin_addr, host_ip, sizeof(host_ip));
             found = 1;
@@ -335,6 +377,8 @@ Term net_auto_join_run(Env e, Term* f, IoWork* w) {
     usleep(1200000);
     return (Term)0;
   }
+
+  recv_lan_handshake(s);
 
   int flags = fcntl(s, F_GETFL, 0);
   fcntl(s, F_SETFL, flags | O_NONBLOCK);
@@ -392,7 +436,12 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
   char mesh_ip[64] = "";
   get_network_ips(lan_ip, sizeof(lan_ip), mesh_ip, sizeof(mesh_ip));
 
-  printf("\x1b[2J\x1b[H\x1b[1;36m📡 ROOM OPEN\x1b[0m\n\n");
+  const char* diff_name = "🐍 Normal (120ms)";
+  if (active_lan_diff == 0) diff_name = "🐢 Easy (165ms)";
+  else if (active_lan_diff == 2) diff_name = "🔥 Hard (85ms)";
+  else if (active_lan_diff == 3) diff_name = "⚡ Turbo (60ms)";
+
+  printf("\x1b[2J\x1b[H\x1b[1;36m📡 ROOM OPEN\x1b[0m  \x1b[90m│\x1b[0m  \x1b[1;37m%s\x1b[0m\n\n", diff_name);
   printf("\x1b[1;32mBroadcasting room beacon to local network...\x1b[0m\n\n");
   printf("  • \x1b[1;37mLocal LAN IP:\x1b[0m   \x1b[1;33m%s\x1b[0m (Port: %u)\n", lan_ip, port);
   if (strlen(mesh_ip) > 0) {
@@ -418,7 +467,8 @@ Term net_accept_run(Env e, Term* f, IoWork* w) {
   int flags = fcntl(s, F_GETFL, 0);
   fcntl(s, F_SETFL, flags | O_NONBLOCK);
   client_sock = s;
-  send(client_sock, &active_lan_seed, sizeof(active_lan_seed), MSG_NOSIGNAL);
+  uint32_t hs[2] = { active_lan_seed, active_lan_diff };
+  send(client_sock, hs, sizeof(hs), MSG_NOSIGNAL);
   return (Term)1;
 }
 
@@ -524,13 +574,7 @@ Term net_prompt_join_run(Env e, Term* f, IoWork* w) {
     return (Term)0;
   }
 
-  struct pollfd pfd = { .fd = s, .events = POLLIN, .revents = 0 };
-  if (poll(&pfd, 1, 1000) > 0) {
-    uint32_t recvd_seed = 0;
-    if (recv(s, &recvd_seed, sizeof(recvd_seed), 0) == sizeof(recvd_seed) && recvd_seed != 0) {
-      active_lan_seed = recvd_seed;
-    }
-  }
+  recv_lan_handshake(s);
 
   FILE* save_fp = fopen(host_path, "w");
   if (save_fp) {
@@ -840,4 +884,6 @@ static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(net_close), net_close_run);
   io_eff(CID(get_random_seed), get_random_seed_run);
   io_eff(CID(check_update), check_update_run);
+  io_eff(CID(net_set_lan_diff), net_set_lan_diff_run);
+  io_eff(CID(net_get_lan_diff), net_get_lan_diff_run);
 }
