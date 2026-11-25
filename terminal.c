@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
@@ -228,17 +229,34 @@ static void get_network_ips(char* lan_ip, size_t lan_len, char* mesh_ip, size_t 
   }
 }
 
+static void set_tcp_nodelay(int s) {
+  int opt = 1;
+  setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+}
+
+static int recv_exact(int s, void* buf, size_t len, int timeout_ms) {
+  uint8_t* p = (uint8_t*)buf;
+  size_t got = 0;
+  while (got < len) {
+    struct pollfd pfd = { .fd = s, .events = POLLIN, .revents = 0 };
+    int ret = poll(&pfd, 1, timeout_ms);
+    if (ret <= 0) return -1;
+    ssize_t n = recv(s, p + got, len - got, 0);
+    if (n == 0) return 0;
+    if (n < 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) continue;
+      return -1;
+    }
+    got += (size_t)n;
+  }
+  return 1;
+}
+
 static void recv_lan_handshake(int s) {
-  struct pollfd pfd = { .fd = s, .events = POLLIN, .revents = 0 };
-  if (poll(&pfd, 1, 1000) > 0) {
-    uint32_t hs[2] = { 0, 1 };
-    ssize_t n = recv(s, hs, sizeof(hs), 0);
-    if (n >= (ssize_t)sizeof(uint32_t) && hs[0] != 0) {
-      active_lan_seed = hs[0];
-    }
-    if (n == (ssize_t)sizeof(hs)) {
-      active_lan_diff = hs[1];
-    }
+  uint32_t hs[2] = { 0, 1 };
+  if (recv_exact(s, hs, sizeof(hs), 1500) == 1) {
+    if (hs[0] != 0) active_lan_seed = hs[0];
+    active_lan_diff = hs[1];
   }
 }
 
@@ -378,6 +396,7 @@ Term net_auto_join_run(Env e, Term* f, IoWork* w) {
     return (Term)0;
   }
 
+  set_tcp_nodelay(s);
   recv_lan_handshake(s);
 
   int flags = fcntl(s, F_GETFL, 0);
@@ -464,6 +483,7 @@ Term net_accept_run(Env e, Term* f, IoWork* w) {
   int s = accept(server_sock, (struct sockaddr*)&caddr, &clen);
   if (s < 0) return (Term)0;
 
+  set_tcp_nodelay(s);
   int flags = fcntl(s, F_GETFL, 0);
   fcntl(s, F_SETFL, flags | O_NONBLOCK);
   client_sock = s;
@@ -574,6 +594,7 @@ Term net_prompt_join_run(Env e, Term* f, IoWork* w) {
     return (Term)0;
   }
 
+  set_tcp_nodelay(s);
   recv_lan_handshake(s);
 
   FILE* save_fp = fopen(host_path, "w");
@@ -599,13 +620,11 @@ Term net_send_key_run(Env e, Term* f, IoWork* w) {
 Term net_recv_key_run(Env e, Term* f, IoWork* w) {
   if (client_sock < 0) return (Term)0;
   uint32_t k = 0;
-  ssize_t n = recv(client_sock, &k, sizeof(k), 0);
-  if (n == sizeof(k)) {
+  int rc = recv_exact(client_sock, &k, sizeof(k), 3000);
+  if (rc == 1) {
     return (Term)k;
-  } else if (n == 0) {
-    return (Term)(uint32_t)'q';
   }
-  return (Term)0;
+  return (Term)(uint32_t)'q';
 }
 
 Term get_random_seed_run(Env e, Term* f, IoWork* w) {

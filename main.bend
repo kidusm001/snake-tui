@@ -328,9 +328,10 @@ def filter_p2_key(+k: U32) -> U32:
 @unsafe def wait_host_dispatch(+mode: U32, +d: Snake.Diff) -> IO(Unit):
   match mode:
     case 2:
-      +g : Snake.GameState = Snake.new_game(424242, 0)
-      frame : String = Snake.render_coop_frame(g, 24n, d)
       do IO<Unit>:
+        +seed : U32 <- Term.get_random_seed()
+        +g : Snake.GameState = Snake.new_game(seed, 0)
+        frame : String = Snake.render_coop_frame(g, 24n, d)
         IO.write(frame)
         coop_host_loop(1000000n, g, d)
     case 4:
@@ -379,9 +380,10 @@ def filter_p2_key(+k: U32) -> U32:
   match is_ok:
     case True{}:
       do IO<Unit>:
+        +seed : U32 <- Term.get_random_seed()
         diff_u : U32 <- Term.net_get_lan_diff()
         +d : Snake.Diff = Snake.u32_to_diff(diff_u)
-        +g : Snake.GameState = Snake.new_game(424242, 0)
+        +g : Snake.GameState = Snake.new_game(seed, 0)
         frame : String = Snake.render_coop_frame(g, 24n, d)
         IO.write(frame)
         coop_join_loop(1000000n, g, d)
@@ -433,7 +435,8 @@ def filter_p2_key(+k: U32) -> U32:
       # [1] Solo Classic
       do IO<Unit>:
         saved_high : U32 <- Term.load_high_score(Snake.diff_to_u32(d))
-        +g : Snake.GameState = Snake.new_game(12345, saved_high)
+        +seed : U32 <- Term.get_random_seed()
+        +g : Snake.GameState = Snake.new_game(seed, saved_high)
         frame : String = Snake.render_frame(g, 24n, d)
         IO.write(frame)
         solo_loop(1000000n, g, d)
@@ -462,7 +465,8 @@ def filter_p2_key(+k: U32) -> U32:
     case 54:
       # [6] Local Co-op
       do IO<Unit>:
-        +g : Snake.GameState = Snake.new_game(54321, 0)
+        +seed : U32 <- Term.get_random_seed()
+        +g : Snake.GameState = Snake.new_game(seed, 0)
         frame : String = Snake.render_coop_frame(g, 24n, d)
         IO.write(frame)
         coop_local_loop(1000000n, g, d)
