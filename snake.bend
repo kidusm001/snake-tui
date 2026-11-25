@@ -371,14 +371,14 @@ def render_grid_par(+w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +ali
 def render_game_over(is_new_high: Bool, score: U32, high_score: U32) -> String:
   match is_new_high:
     case True{}:
-      "\u{1b}[1;32m🎉 NEW HIGH SCORE! 🏆 " ++ U32.show(score) ++ " 🎉\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Play Again   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;32m🎉 NEW HIGH SCORE! 🏆 " ++ U32.show(score) ++ " 🎉\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33m[R]\u{1b}[0m Play Again  \u{1b}[1;36m[M]\u{1b}[0m Menu  \u{1b}[1;31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case False{}:
-      "\u{1b}[1;31m💀 GAME OVER!\u{1b}[0m   \u{1b}[1;37mScore: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[R]\u{1b}[0m Play Again   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;31m💀 GAME OVER!\u{1b}[0m  \u{1b}[1;37mScore: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m  \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33m[R]\u{1b}[0m Play Again  \u{1b}[1;36m[M]\u{1b}[0m Menu  \u{1b}[1;31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
 
 def render_status(alive: Bool, +score: U32, +high_score: U32) -> String:
   match alive:
     case True{}:
-      "\u{1b}[1;37m🍎 Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[37mControls: [W/A/S/D] or [↑/←/↓/→]\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;37m🍎 Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m  \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[37m[W/A/S/D or ↑/←/↓/→]\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case False{}:
       is_new = (score >= high_score : U32) && (score > 0 : U32)
       render_game_over(is_new, score, high_score)
@@ -414,7 +414,7 @@ def step_coop(g: GameState, +k1: U32, +k2: U32, +w: U32, +h: U32) -> GameState:
 def render_coop_status(alive: Bool, +score: U32, +high_score: U32) -> String:
   match alive:
     case True{}:
-      "\u{1b}[1;37m🍎 Co-op Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[36m[P1: Host] [P2: Client]\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;37m🍎 Co-op Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m  \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[36m[P1] [P2]\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case False{}:
       is_new = (score >= high_score : U32) && (score > 0 : U32)
       render_game_over(is_new, score, high_score)
@@ -715,13 +715,13 @@ def render_versus_grid_par(+w_nat: Nat, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h
 def render_versus_status(winner: VersusWinner, +s1: U32, +s2: U32, +w1: U32, +w2: U32) -> String:
   match winner:
     case Active{}:
-      "\u{1b}[1;32m🍏 P1: \u{1b}[1;37m" ++ U32.show(s1) ++ " \u{1b}[1;33m(W:" ++ U32.show(w1) ++ ")\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;35m🍇 P2: \u{1b}[1;37m" ++ U32.show(s2) ++ " \u{1b}[1;33m(W:" ++ U32.show(w2) ++ ")\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Vote Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;32m🍏 P1: \u{1b}[1;37m" ++ U32.show(s1) ++ " \u{1b}[1;33m(W:" ++ U32.show(w1) ++ ")\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;35m🍇 P2: \u{1b}[1;37m" ++ U32.show(s2) ++ " \u{1b}[1;33m(W:" ++ U32.show(w2) ++ ")\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Vote Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case P1Win{}:
-      "\u{1b}[1;32m🎉 P1 (GREEN) WINS! 🏆\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;32m🎉 P1 (GREEN) WINS! 🏆\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case P2Win{}:
-      "\u{1b}[1;35m🎉 P2 (PURPLE) WINS! 🏆\u{1b}[0m  " ++ U32.show(s2) ++ "-" ++ U32.show(s1) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;35m🎉 P2 (PURPLE) WINS! 🏆\u{1b}[0m  " ++ U32.show(s2) ++ "-" ++ U32.show(s1) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
     case Draw{}:
-      "\u{1b}[1;31m⚔️ DRAW! ⚔️\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[33m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;31m⚔️ DRAW! ⚔️\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
 
 def get_versus_max_score(vg: VersusState) -> U32:
   VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, +seed, +w1, +w2} = vg

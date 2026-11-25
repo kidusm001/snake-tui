@@ -8,6 +8,19 @@ def is_quit(+k: U32) -> Bool:
 def is_restart(+k: U32) -> Bool:
   U32.is_eq(k, 114)
 
+def is_menu(+k: U32) -> Bool:
+  U32.is_eq(k, 109)
+
+@unsafe def return_to_menu(+d: Snake.Diff) -> IO(Unit):
+  do IO<Unit>:
+    IO.write(Snake.render_menu(d))
+    menu_loop(100000n, d)
+
+@unsafe def net_return_to_menu(+d: Snake.Diff) -> IO(Unit):
+  do IO<Unit>:
+    Term.net_close()
+    return_to_menu(d)
+
 def is_p2_local_restart(+k: U32) -> Bool:
   U32.is_eq(k, 111) || U32.is_eq(k, 13) || U32.is_eq(k, 10)
 
@@ -67,6 +80,15 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_score(next_g)))
         solo_loop(p, next_g, d)
 
+@unsafe def solo_step_menu(go_menu: Bool, p: Nat, +k: U32, +g: Snake.GameState, +d: Snake.Diff) -> IO(Unit):
+  match go_menu:
+    case True{}:
+      do IO<Unit>:
+        Term.save_high_score(Snake.get_high_score(g), Snake.diff_to_u32(d))
+        return_to_menu(d)
+    case False{}:
+      solo_step_run(p, k, is_restart(k), g, d)
+
 @unsafe def solo_step(p: Nat, +k: U32, quit: Bool, +g: Snake.GameState, +d: Snake.Diff) -> IO(Unit):
   match quit:
     case True{}:
@@ -74,7 +96,7 @@ def filter_p2_key(+k: U32) -> U32:
         Term.save_high_score(Snake.get_high_score(g), Snake.diff_to_u32(d))
         Term.restore()
     case False{}:
-      solo_step_run(p, k, is_restart(k), g, d)
+      solo_step_menu(is_menu(k), p, k, g, d)
 
 @unsafe def solo_loop(fuel: Nat, g: Snake.GameState, +d: Snake.Diff) -> IO(Unit):
   match fuel:
@@ -107,13 +129,20 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_score(next_g)))
         coop_local_loop(p, next_g, d, rv)
 
+@unsafe def coop_local_step_menu(go_menu: Bool, p: Nat, +k: U32, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
+  match go_menu:
+    case True{}:
+      return_to_menu(d)
+    case False{}:
+      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k), is_p2_local_restart(k))
+      coop_local_step_run(Snake.both_restart(next_rv), p, k, g, d, next_rv)
+
 @unsafe def coop_local_step(quit: Bool, p: Nat, +k: U32, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match quit:
     case True{}:
       Term.restore()
     case False{}:
-      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k), is_p2_local_restart(k))
-      coop_local_step_run(Snake.both_restart(next_rv), p, k, g, d, next_rv)
+      coop_local_step_menu(is_menu(k), p, k, g, d, rv)
 
 @unsafe def coop_local_loop(fuel: Nat, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match fuel:
@@ -145,13 +174,20 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_versus_max_score(next_vg)))
         versus_local_loop(p, next_vg, d, rv)
 
+@unsafe def versus_local_step_menu(go_menu: Bool, p: Nat, +k: U32, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
+  match go_menu:
+    case True{}:
+      return_to_menu(d)
+    case False{}:
+      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k), is_p2_local_restart(k))
+      versus_local_step_run(Snake.both_restart(next_rv), p, k, vg, d, next_rv)
+
 @unsafe def versus_local_step(quit: Bool, p: Nat, +k: U32, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match quit:
     case True{}:
       Term.restore()
     case False{}:
-      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k), is_p2_local_restart(k))
-      versus_local_step_run(Snake.both_restart(next_rv), p, k, vg, d, next_rv)
+      versus_local_step_menu(is_menu(k), p, k, vg, d, rv)
 
 @unsafe def versus_local_loop(fuel: Nat, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match fuel:
@@ -182,6 +218,14 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_score(next_g)))
         coop_host_loop(p, next_g, d, rv)
 
+@unsafe def coop_host_step_menu(go_menu: Bool, p: Nat, +k1: U32, +k2: U32, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
+  match go_menu:
+    case True{}:
+      net_return_to_menu(d)
+    case False{}:
+      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k1), is_restart(k2))
+      coop_host_step_run(Snake.both_restart(next_rv), p, k1, k2, g, d, next_rv)
+
 @unsafe def coop_host_step(quit: Bool, p: Nat, +k1: U32, +k2: U32, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match quit:
     case True{}:
@@ -189,8 +233,7 @@ def filter_p2_key(+k: U32) -> U32:
         Term.net_close()
         Term.restore()
     case False{}:
-      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k1), is_restart(k2))
-      coop_host_step_run(Snake.both_restart(next_rv), p, k1, k2, g, d, next_rv)
+      coop_host_step_menu(is_menu(k1) || is_menu(k2) || is_quit(k2), p, k1, k2, g, d, rv)
 
 @unsafe def coop_host_loop(fuel: Nat, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match fuel:
@@ -203,7 +246,7 @@ def filter_p2_key(+k: U32) -> U32:
         +k1 : U32 <- Term.poll_key()
         Term.net_send_key(k1)
         +k2 : U32 <- Term.net_recv_key()
-        coop_host_step(is_quit(k1) || is_quit(k2), p, k1, k2, g, d, rv)
+        coop_host_step(is_quit(k1), p, k1, k2, g, d, rv)
 
 # LAN Co-op Join Loop
 @unsafe def coop_join_step_run(restart: Bool, p: Nat, +k1: U32, +k2: U32, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
@@ -225,6 +268,14 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_score(next_g)))
         coop_join_loop(p, next_g, d, rv)
 
+@unsafe def coop_join_step_menu(go_menu: Bool, p: Nat, +k1: U32, +k2: U32, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
+  match go_menu:
+    case True{}:
+      net_return_to_menu(d)
+    case False{}:
+      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k1), is_restart(k2))
+      coop_join_step_run(Snake.both_restart(next_rv), p, k1, k2, g, d, next_rv)
+
 @unsafe def coop_join_step(quit: Bool, p: Nat, +k1: U32, +k2: U32, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match quit:
     case True{}:
@@ -232,8 +283,7 @@ def filter_p2_key(+k: U32) -> U32:
         Term.net_close()
         Term.restore()
     case False{}:
-      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k1), is_restart(k2))
-      coop_join_step_run(Snake.both_restart(next_rv), p, k1, k2, g, d, next_rv)
+      coop_join_step_menu(is_menu(k1) || is_menu(k2) || is_quit(k1), p, k1, k2, g, d, rv)
 
 @unsafe def coop_join_loop(fuel: Nat, g: Snake.GameState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match fuel:
@@ -246,7 +296,7 @@ def filter_p2_key(+k: U32) -> U32:
         +k2 : U32 <- Term.poll_key()
         Term.net_send_key(k2)
         +k1 : U32 <- Term.net_recv_key()
-        coop_join_step(is_quit(k1) || is_quit(k2), p, k1, k2, g, d, rv)
+        coop_join_step(is_quit(k2), p, k1, k2, g, d, rv)
 
 # LAN Versus Host Loop
 @unsafe def versus_host_step_run(restart: Bool, p: Nat, +k1: U32, +k2: U32, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
@@ -267,6 +317,14 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_versus_max_score(next_vg)))
         versus_host_loop(p, next_vg, d, rv)
 
+@unsafe def versus_host_step_menu(go_menu: Bool, p: Nat, +k1: U32, +k2: U32, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
+  match go_menu:
+    case True{}:
+      net_return_to_menu(d)
+    case False{}:
+      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k1), is_restart(k2))
+      versus_host_step_run(Snake.both_restart(next_rv), p, k1, k2, vg, d, next_rv)
+
 @unsafe def versus_host_step(quit: Bool, p: Nat, +k1: U32, +k2: U32, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match quit:
     case True{}:
@@ -274,8 +332,7 @@ def filter_p2_key(+k: U32) -> U32:
         Term.net_close()
         Term.restore()
     case False{}:
-      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k1), is_restart(k2))
-      versus_host_step_run(Snake.both_restart(next_rv), p, k1, k2, vg, d, next_rv)
+      versus_host_step_menu(is_menu(k1) || is_menu(k2) || is_quit(k2), p, k1, k2, vg, d, rv)
 
 @unsafe def versus_host_loop(fuel: Nat, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match fuel:
@@ -288,7 +345,7 @@ def filter_p2_key(+k: U32) -> U32:
         +k1 : U32 <- Term.poll_key()
         Term.net_send_key(k1)
         +k2 : U32 <- Term.net_recv_key()
-        versus_host_step(is_quit(k1) || is_quit(k2), p, k1, k2, vg, d, rv)
+        versus_host_step(is_quit(k1), p, k1, k2, vg, d, rv)
 
 # LAN Versus Join Loop
 @unsafe def versus_join_step_run(restart: Bool, p: Nat, +k1: U32, +k2: U32, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
@@ -309,6 +366,14 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_versus_max_score(next_vg)))
         versus_join_loop(p, next_vg, d, rv)
 
+@unsafe def versus_join_step_menu(go_menu: Bool, p: Nat, +k1: U32, +k2: U32, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
+  match go_menu:
+    case True{}:
+      net_return_to_menu(d)
+    case False{}:
+      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k1), is_restart(k2))
+      versus_join_step_run(Snake.both_restart(next_rv), p, k1, k2, vg, d, next_rv)
+
 @unsafe def versus_join_step(quit: Bool, p: Nat, +k1: U32, +k2: U32, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match quit:
     case True{}:
@@ -316,8 +381,7 @@ def filter_p2_key(+k: U32) -> U32:
         Term.net_close()
         Term.restore()
     case False{}:
-      +next_rv : Snake.RestartVote = Snake.vote_restart(rv, is_restart(k1), is_restart(k2))
-      versus_join_step_run(Snake.both_restart(next_rv), p, k1, k2, vg, d, next_rv)
+      versus_join_step_menu(is_menu(k1) || is_menu(k2) || is_quit(k1), p, k1, k2, vg, d, rv)
 
 @unsafe def versus_join_loop(fuel: Nat, vg: Snake.VersusState, +d: Snake.Diff, +rv: Snake.RestartVote) -> IO(Unit):
   match fuel:
@@ -330,7 +394,7 @@ def filter_p2_key(+k: U32) -> U32:
         +k2 : U32 <- Term.poll_key()
         Term.net_send_key(k2)
         +k1 : U32 <- Term.net_recv_key()
-        versus_join_step(is_quit(k1) || is_quit(k2), p, k1, k2, vg, d, rv)
+        versus_join_step(is_quit(k2), p, k1, k2, vg, d, rv)
 
 # Waiting for LAN Client
 @unsafe def wait_host_dispatch(+mode: U32, +d: Snake.Diff) -> IO(Unit):
@@ -363,17 +427,24 @@ def filter_p2_key(+k: U32) -> U32:
         IO.sleep(100)
         wait_host(p, mode, d)
 
-@unsafe def wait_host_step(quit: Bool, p: Nat, +mode: U32, +d: Snake.Diff) -> IO(Unit):
+@unsafe def wait_host_step_menu(go_menu: Bool, p: Nat, +mode: U32, +d: Snake.Diff) -> IO(Unit):
+  match go_menu:
+    case True{}:
+      net_return_to_menu(d)
+    case False{}:
+      do IO<Unit>:
+        Term.net_beacon_tick(mode)
+        +ok : U32 <- Term.net_accept()
+        wait_host_check(U32.is_eq(ok, 1), p, mode, d)
+
+@unsafe def wait_host_step(quit: Bool, go_menu: Bool, p: Nat, +mode: U32, +d: Snake.Diff) -> IO(Unit):
   match quit:
     case True{}:
       do IO<Unit>:
         Term.net_close()
         Term.restore()
     case False{}:
-      do IO<Unit>:
-        Term.net_beacon_tick(mode)
-        +ok : U32 <- Term.net_accept()
-        wait_host_check(U32.is_eq(ok, 1), p, mode, d)
+      wait_host_step_menu(go_menu, p, mode, d)
 
 @unsafe def wait_host(fuel: Nat, +mode: U32, +d: Snake.Diff) -> IO(Unit):
   match fuel:
@@ -384,9 +455,9 @@ def filter_p2_key(+k: U32) -> U32:
     case 1n+p:
       do IO<Unit>:
         +k : U32 <- Term.poll_key()
-        wait_host_step(is_quit(k), p, mode, d)
+        wait_host_step(is_quit(k), is_menu(k), p, mode, d)
 
-@unsafe def join_coop_step(is_ok: Bool) -> IO(Unit):
+@unsafe def join_coop_step(is_ok: Bool, +fallback_d: Snake.Diff) -> IO(Unit):
   match is_ok:
     case True{}:
       do IO<Unit>:
@@ -402,9 +473,9 @@ def filter_p2_key(+k: U32) -> U32:
       do IO<Unit>:
         IO.print("\nFailed to connect to host. Returning to menu...\n")
         IO.sleep(1500)
-        Term.restore()
+        return_to_menu(fallback_d)
 
-@unsafe def join_versus_step(is_ok: Bool) -> IO(Unit):
+@unsafe def join_versus_step(is_ok: Bool, +fallback_d: Snake.Diff) -> IO(Unit):
   match is_ok:
     case True{}:
       do IO<Unit>:
@@ -420,18 +491,16 @@ def filter_p2_key(+k: U32) -> U32:
       do IO<Unit>:
         IO.print("\nFailed to connect to host. Returning to menu...\n")
         IO.sleep(1500)
-        Term.restore()
+        return_to_menu(fallback_d)
 
 @unsafe def join_browse_dispatch(+joined_mode: U32, +d: Snake.Diff) -> IO(Unit):
   match joined_mode:
     case 2:
-      join_coop_step(True{})
+      join_coop_step(True{}, d)
     case 4:
-      join_versus_step(True{})
+      join_versus_step(True{}, d)
     case _:
-      do IO<Unit>:
-        IO.write(Snake.render_menu(d))
-        menu_loop(100000n, d)
+      return_to_menu(d)
 
 # Main Menu Dispatcher
 @unsafe def menu_select(+choice: U32, +d: Snake.Diff) -> IO(Unit):

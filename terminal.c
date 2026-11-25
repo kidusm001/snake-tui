@@ -496,7 +496,7 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
   }
   printf("\n\x1b[90mOther PCs can pick this room from 'Join LAN Room'!\x1b[0m\n");
   printf("\x1b[90mTip: If using a VPN (Nord/Mullvad/Proton), enable 'Allow LAN Traffic' or use Tailscale.\x1b[0m\n");
-  printf("\x1b[90m(Press [Q] to cancel)\x1b[0m\n");
+  printf("\x1b[90m(Press \x1b[36m[M]\x1b[90m Menu  │  \x1b[31m[Q]\x1b[90m Quit)\x1b[0m\n");
   fflush(stdout);
 
   return (Term)1;
