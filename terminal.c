@@ -19,12 +19,290 @@
 #include <ctype.h>
 #include <string.h>
 #include <errno.h>
+#include <math.h>
+#include <pthread.h>
 
 static struct termios orig_termios;
 static int raw_mode_set = 0;
 static int alt_screen_set = 0;
 static int term_active = 0;
 static int cleanup_registered = 0;
+
+// --- Zero-Dep C Synth Audio Engine (Dungeon Boss + SFX) ---
+#define AUDIO_RATE 44100
+#define AUDIO_PI 3.14159265358979323846f
+
+static volatile int audio_running = 0;
+static volatile int audio_muted = 0;
+static volatile int audio_sfx_req = 0; // 1 = eat chime, 2 = crash
+static int audio_pipe_fd = -1;
+static pid_t audio_child_pid = -1;
+static pthread_t audio_thread;
+static int audio_thread_started = 0;
+
+static float synth_midi_hz(int note) {
+  if (note < 0) return 0.0f;
+  return 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
+}
+static float synth_pulse(float ph, float duty) {
+  float p = ph - floorf(ph);
+  return (p < duty) ? 1.0f : -1.0f;
+}
+static float synth_saw(float ph) {
+  float p = ph - floorf(ph);
+  return 2.0f * p - 1.0f;
+}
+static float synth_tri(float ph) {
+  float p = ph - floorf(ph);
+  return 4.0f * fabsf(p - 0.5f) - 1.0f;
+}
+static float synth_sine(float ph) {
+  return sinf(2.0f * AUDIO_PI * (ph - floorf(ph)));
+}
+
+static const int DB_LEAD[64] = {
+  74,-2, 77,76, 74,-2, 72,70, 69,-2, 74,-2, 77,-2, 81,-2,
+  82,-2, 81,79, 77,-2, 74,-2, 70,-2, 74,-2, 77,-2, 82,-2,
+  79,-2, 82,81, 79,-2, 77,76, 74,-2, 70,-2, 67,-2, 74,-2,
+  73,-2, 76,79, 81,-2, 79,76, 73,-2, 69,-2, 73,76, 81,-2
+};
+static const int DB_BASS[64] = {
+  38,38,50,38, 38,38,50,38, 38,38,50,38, 38,50,45,41,
+  34,34,46,34, 34,34,46,34, 34,34,46,34, 34,46,41,38,
+  31,31,43,31, 31,31,43,31, 31,31,43,31, 31,43,38,34,
+  33,33,45,33, 33,33,45,33, 33,33,45,33, 37,40,45,49
+};
+static const int DB_ARP[64] = {
+  62,65,69,74, 69,65,62,65, 62,65,69,74, 69,65,62,65,
+  58,62,65,70, 65,62,58,62, 58,62,65,70, 65,62,58,62,
+  55,58,62,67, 62,58,55,58, 55,58,62,67, 62,58,55,58,
+  57,61,64,69, 64,61,57,61, 57,61,64,69, 73,69,64,61
+};
+static const int DB_KICK[64] = {
+  1,0,1,0, 0,0,1,0, 1,0,0,0, 1,0,1,0,
+  1,0,1,0, 0,0,1,0, 1,0,0,0, 1,0,1,0,
+  1,0,1,0, 0,0,1,0, 1,0,0,0, 1,0,1,0,
+  1,0,1,0, 0,0,1,0, 1,0,1,0, 1,1,1,0
+};
+static const int DB_SNARE[64] = {
+  0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0,
+  0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,1,
+  0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0,
+  0,0,0,0, 1,0,0,1, 0,0,0,0, 1,0,1,1
+};
+static const int DB_HAT[64] = {
+  1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0,
+  1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0,
+  1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0,
+  1,0,1,0, 1,0,1,0, 1,0,1,0, 1,1,1,1
+};
+
+static int audio_write_all(int fd, const void* buf, size_t len) {
+  const uint8_t* p = (const uint8_t*)buf;
+  while (len > 0) {
+    if (!__atomic_load_n(&audio_running, __ATOMIC_ACQUIRE)) return 0;
+    ssize_t n = write(fd, p, len);
+    if (n > 0) {
+      p += n;
+      len -= (size_t)n;
+    } else if (errno == EINTR) {
+      continue;
+    } else {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static void* audio_synth_worker(void* arg) {
+  (void)arg;
+  const int samples_per_step = (int)((60.0f / 142.0f / 4.0f) * AUDIO_RATE);
+  uint32_t rng = 0x9E3779B9u;
+  float lead_ph = 0.0f, bass_ph = 0.0f, arp_ph = 0.0f, kick_ph = 0.0f;
+  float lead_hz = 0.0f, bass_hz = 0.0f, arp_hz = 0.0f;
+  float lead_env = 0.0f, bass_env = 0.0f, arp_env = 0.0f;
+  float kick_env = 0.0f, snare_env = 0.0f, hat_env = 0.0f;
+  float lp_l = 0.0f, lp_r = 0.0f;
+
+  // SFX state
+  int sfx_type = 0;
+  int sfx_samples_left = 0;
+  int sfx_total = 0;
+  float sfx_ph = 0.0f;
+
+  int step = 0;
+  int step_sample = 0;
+  uint32_t total_frames = 0;
+  int16_t pcm[512 * 2];
+
+  while (__atomic_load_n(&audio_running, __ATOMIC_ACQUIRE)) {
+    for (int i = 0; i < 512; i++) {
+      if (step_sample == 0) {
+        int idx = step % 64;
+        int ln = DB_LEAD[idx];
+        if (ln >= 0) { lead_hz = synth_midi_hz(ln); lead_env = 1.0f; }
+        else if (ln == -1) { lead_env *= 0.2f; }
+
+        int bn = DB_BASS[idx];
+        if (bn >= 0) { bass_hz = synth_midi_hz(bn); bass_env = 1.0f; }
+
+        int an = DB_ARP[idx];
+        if (an >= 0) { arp_hz = synth_midi_hz(an); arp_env = 1.0f; }
+
+        if (DB_KICK[idx]) { kick_env = 1.0f; kick_ph = 0.0f; }
+        if (DB_SNARE[idx]) { snare_env = 1.0f; }
+        if (DB_HAT[idx]) { hat_env = 1.0f; }
+      }
+
+      int req = __atomic_exchange_n(&audio_sfx_req, 0, __ATOMIC_ACQ_REL);
+      if (req == 1) {
+        sfx_type = 1;
+        sfx_total = AUDIO_RATE / 7; // ~142ms coin/apple chime
+        sfx_samples_left = sfx_total;
+        sfx_ph = 0.0f;
+      } else if (req == 2) {
+        sfx_type = 2;
+        sfx_total = AUDIO_RATE / 3; // ~333ms crash crunch
+        sfx_samples_left = sfx_total;
+        sfx_ph = 0.0f;
+      }
+
+      float time_s = (float)total_frames / AUDIO_RATE;
+      float vib = 1.0f + 0.004f * sinf(2.0f * AUDIO_PI * 5.8f * time_s);
+      lead_ph += (lead_hz * vib) / AUDIO_RATE;
+      bass_ph += bass_hz / AUDIO_RATE;
+      arp_ph += arp_hz / AUDIO_RATE;
+
+      float lead_sig = (synth_saw(lead_ph) * 0.15f + synth_pulse(lead_ph, 0.50f) * 0.14f) * lead_env;
+      lead_env *= 0.99975f;
+
+      float bass_sig = (synth_saw(bass_ph) * 0.18f + synth_sine(bass_ph) * 0.22f) * bass_env;
+      bass_env *= 0.99965f;
+
+      float arp_sig = synth_pulse(arp_ph, 0.18f) * 0.10f * arp_env;
+      arp_env *= 0.9992f;
+
+      float kick_freq = 48.0f + 120.0f * kick_env * kick_env;
+      kick_ph += kick_freq / AUDIO_RATE;
+      float kick_sig = synth_sine(kick_ph) * 0.36f * kick_env;
+      kick_env *= 0.9987f;
+
+      rng = rng * 1664525u + 1013904223u;
+      float nz = ((float)((rng >> 16) & 0xFFFFu) / 32767.5f) - 1.0f;
+      float snare_sig = nz * 0.22f * snare_env;
+      snare_env *= 0.9980f;
+
+      float hat_sig = nz * 0.07f * hat_env;
+      hat_env *= 0.9955f;
+
+      float sfx_sig = 0.0f;
+      if (sfx_samples_left > 0) {
+        float prog = 1.0f - ((float)sfx_samples_left / (float)sfx_total);
+        if (sfx_type == 1) {
+          float f = (prog < 0.42f) ? 1046.5f : 1318.5f; // C6 -> E6
+          sfx_ph += f / AUDIO_RATE;
+          sfx_sig = synth_pulse(sfx_ph, 0.25f) * 0.22f * (1.0f - prog * 0.6f);
+        } else {
+          float f = 220.0f * (1.0f - 0.72f * prog);
+          sfx_ph += f / AUDIO_RATE;
+          sfx_sig = (synth_saw(sfx_ph) * 0.22f + nz * 0.14f) * (1.0f - prog);
+        }
+        sfx_samples_left--;
+      }
+
+      if (__atomic_load_n(&audio_muted, __ATOMIC_RELAXED)) {
+        pcm[i * 2] = 0;
+        pcm[i * 2 + 1] = 0;
+      } else {
+        float mix_l = lead_sig * 0.95f + arp_sig * 1.15f + bass_sig + kick_sig + snare_sig * 0.95f + hat_sig * 1.15f;
+        float mix_r = lead_sig * 1.05f + arp_sig * 0.85f + bass_sig + kick_sig + snare_sig * 1.05f + hat_sig * 0.85f;
+        lp_l += 0.42f * (mix_l - lp_l);
+        lp_r += 0.42f * (mix_r - lp_r);
+        float out_l = tanhf((lp_l * 0.82f) + sfx_sig) * 0.75f;
+        float out_r = tanhf((lp_r * 0.82f) + sfx_sig) * 0.75f;
+        pcm[i * 2] = (int16_t)(out_l * 32767.0f);
+        pcm[i * 2 + 1] = (int16_t)(out_r * 32767.0f);
+      }
+
+      total_frames++;
+      step_sample++;
+      if (step_sample >= samples_per_step) {
+        step_sample = 0;
+        step = (step + 1) % 64;
+      }
+    }
+    if (!audio_write_all(audio_pipe_fd, pcm, sizeof(pcm))) {
+      break;
+    }
+  }
+  return NULL;
+}
+
+static void audio_start(void) {
+  if (audio_thread_started || !isatty(STDIN_FILENO) || getenv("SNAKE_NO_AUDIO")) {
+    return;
+  }
+  int pfd[2];
+  if (pipe(pfd) != 0) return;
+#ifdef F_SETPIPE_SZ
+  fcntl(pfd[1], F_SETPIPE_SZ, 8192);
+#endif
+  signal(SIGPIPE, SIG_IGN);
+
+  pid_t pid = fork();
+  if (pid == 0) {
+    dup2(pfd[0], STDIN_FILENO);
+    close(pfd[0]);
+    close(pfd[1]);
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull >= 0) {
+      dup2(devnull, STDOUT_FILENO);
+      dup2(devnull, STDERR_FILENO);
+      close(devnull);
+    }
+    execlp("pw-play", "pw-play", "--raw", "--rate", "44100", "--channels", "2", "--format", "s16", "--volume", "0.55", "-", (char*)NULL);
+    execlp("paplay", "paplay", "--raw", "--rate=44100", "--channels=2", "--format=s16le", "--volume=36000", (char*)NULL);
+    execlp("aplay", "aplay", "-q", "-f", "S16_LE", "-r", "44100", "-c", "2", "-t", "raw", "-", (char*)NULL);
+    _exit(127);
+  }
+  close(pfd[0]);
+  if (pid < 0) {
+    close(pfd[1]);
+    return;
+  }
+  audio_child_pid = pid;
+  audio_pipe_fd = pfd[1];
+  __atomic_store_n(&audio_running, 1, __ATOMIC_RELEASE);
+  if (pthread_create(&audio_thread, NULL, audio_synth_worker, NULL) == 0) {
+    audio_thread_started = 1;
+  } else {
+    __atomic_store_n(&audio_running, 0, __ATOMIC_RELEASE);
+    close(audio_pipe_fd);
+    audio_pipe_fd = -1;
+    kill(audio_child_pid, SIGTERM);
+    waitpid(audio_child_pid, NULL, 0);
+    audio_child_pid = -1;
+  }
+}
+
+static void audio_stop(void) {
+  __atomic_store_n(&audio_running, 0, __ATOMIC_RELEASE);
+  if (audio_pipe_fd >= 0) {
+    close(audio_pipe_fd);
+    audio_pipe_fd = -1;
+  }
+  if (audio_child_pid > 0) {
+    kill(audio_child_pid, SIGTERM);
+  }
+  if (audio_thread_started) {
+    pthread_join(audio_thread, NULL);
+    audio_thread_started = 0;
+  }
+  if (audio_child_pid > 0) {
+    waitpid(audio_child_pid, NULL, 0);
+    audio_child_pid = -1;
+  }
+}
 
 static void get_winsize_dims(uint32_t* cols_out, uint32_t* rows_out) {
   struct winsize ws;
@@ -43,7 +321,7 @@ static void get_winsize_dims(uint32_t* cols_out, uint32_t* rows_out) {
   *rows_out = 24;
 }
 
-static void term_cleanup_internal(void) {
+static void term_cleanup_terminal_only(void) {
   if (!term_active) {
     return;
   }
@@ -62,8 +340,21 @@ static void term_cleanup_internal(void) {
   }
 }
 
+static void term_cleanup_internal(void) {
+  audio_stop();
+  term_cleanup_terminal_only();
+}
+
 static void term_signal_handler(int sig) {
-  term_cleanup_internal();
+  __atomic_store_n(&audio_running, 0, __ATOMIC_RELAXED);
+  if (audio_child_pid > 0) {
+    kill(audio_child_pid, SIGTERM);
+  }
+  if (audio_pipe_fd >= 0) {
+    close(audio_pipe_fd);
+    audio_pipe_fd = -1;
+  }
+  term_cleanup_terminal_only();
   _exit(128 + sig);
 }
 
@@ -89,11 +380,32 @@ Term term_init_run(Env e, Term* f, IoWork* w) {
   (void)write(STDOUT_FILENO, init_seq, sizeof(init_seq) - 1);
   alt_screen_set = 1;
   term_active = 1;
+  audio_start();
   return term_pak(CID(Unit), 0);
 }
 
 Term term_restore_run(Env e, Term* f, IoWork* w) {
   term_cleanup_internal();
+  return term_pak(CID(Unit), 0);
+}
+
+Term toggle_mute_run(Env e, Term* f, IoWork* w) {
+  int cur = __atomic_load_n(&audio_muted, __ATOMIC_RELAXED);
+  int next = cur ? 0 : 1;
+  __atomic_store_n(&audio_muted, next, __ATOMIC_RELEASE);
+  return (Term)(uint32_t)next;
+}
+
+Term is_muted_run(Env e, Term* f, IoWork* w) {
+  int cur = __atomic_load_n(&audio_muted, __ATOMIC_RELAXED);
+  return (Term)(uint32_t)(cur ? 1 : 0);
+}
+
+Term play_sfx_run(Env e, Term* f, IoWork* w) {
+  uint32_t kind = (uint32_t)f[0];
+  if (!__atomic_load_n(&audio_muted, __ATOMIC_RELAXED) && (kind == 1 || kind == 2)) {
+    __atomic_store_n(&audio_sfx_req, (int)kind, __ATOMIC_RELEASE);
+  }
   return term_pak(CID(Unit), 0);
 }
 
@@ -1300,4 +1612,7 @@ static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(net_browse_join), net_browse_join_run);
   io_eff(CID(get_term_cols), get_term_cols_run);
   io_eff(CID(get_term_rows), get_term_rows_run);
+  io_eff(CID(toggle_mute), toggle_mute_run);
+  io_eff(CID(is_muted), is_muted_run);
+  io_eff(CID(play_sfx), play_sfx_run);
 }

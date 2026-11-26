@@ -75,3 +75,15 @@ def get_term_cols() -> IO(U32):
 def get_term_rows() -> IO(U32):
   import "./terminal.c"
   import "./terminal.js"
+
+def toggle_mute() -> IO(U32):
+  import "./terminal.c"
+  import "./terminal.js"
+
+def is_muted() -> IO(U32):
+  import "./terminal.c"
+  import "./terminal.js"
+
+def play_sfx(kind: U32) -> IO(Unit):
+  import "./terminal.c"
+  import "./terminal.js"

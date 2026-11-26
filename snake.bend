@@ -487,12 +487,19 @@ def render_status(alive: Bool, +score: U32, +high_score: U32) -> String:
       is_new = (score >= high_score : U32) && (score > 0 : U32)
       render_game_over(is_new, score, high_score)
 
-def solo_footer(alive: Bool) -> String:
+def music_btn(+muted: U32) -> String:
+  match muted:
+    case 0:
+      "\u{1b}[38;2;74;222;128m[B]\u{1b}[38;2;148;163;184m 🎵"
+    case _:
+      "\u{1b}[38;2;148;163;184m[B] 🔇"
+
+def solo_footer(alive: Bool, +muted: U32) -> String:
   match alive:
     case True{}:
-      "\u{1b}[38;2;148;163;184m[WASD / ↑↓←→] Move   \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Restart   \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu   \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+      "\u{1b}[38;2;148;163;184m[WASD/↑↓←→]  \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Restart  \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu  " ++ music_btn(muted) ++ "  \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
     case False{}:
-      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Play Again   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Play Again  \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu  " ++ music_btn(muted) ++ "\u{1b}[0m  \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
 
 def wrap_cabinet(+pad_x: U32, +pad_y: U32, +theme: U32, title_osc: String, header: String, status: String, wait_line: String, grid: String, footer: String) -> String:
   +pfx = row_prefix(pad_x)
@@ -506,7 +513,7 @@ def wrap_cabinet(+pad_x: U32, +pad_y: U32, +theme: U32, title_osc: String, heade
   pfx ++ cabinet_border_bot(theme) ++
   pfx ++ footer ++ "\u{1b}[K\u{1b}[J\u{1b}[?2026l"
 
-def render_frame(g: GameState, +w_nat: Nat, d: Diff, +cols: U32, +rows: U32, +theme: U32) -> String:
+def render_frame(g: GameState, +w_nat: Nat, d: Diff, +cols: U32, +rows: U32, +theme: U32, +muted: U32) -> String:
   Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
   +pad_x = center_pad(cols, 50)
   +pad_y = center_pad(rows, 21)
@@ -516,7 +523,7 @@ def render_frame(g: GameState, +w_nat: Nat, d: Diff, +cols: U32, +rows: U32, +th
   header = "\u{1b}[1;38;2;250;204;21m🐍 BEND SNAKE 🐍\u{1b}[0m  " ++ badge ++ "  " ++ tbadge
   grid = render_grid_par(w_nat, pad_x, head, food, body, alive, theme)
   status = render_status(alive, score, high_score)
-  footer = solo_footer(alive)
+  footer = solo_footer(alive, muted)
   wrap_cabinet(pad_x, pad_y, theme, title_osc, header, status, "", grid, footer)
 
 # Co-op Mode: 2 Players Steering 1 Snake
@@ -587,18 +594,18 @@ def render_restart_wait(rv: RestartVote, is_local: Bool, +pad_x: U32) -> String:
   RestartVote{r1, r2} = rv
   render_restart_wait_inner(r1, r2, is_local, row_prefix(pad_x))
 
-def coop_footer(alive: Bool, is_local: Bool) -> String:
+def coop_footer(alive: Bool, is_local: Bool, +muted: U32) -> String:
   match alive is_local:
     case True{} True{}:
-      "\u{1b}[38;2;148;163;184m[P1: WASD/R]  [P2: Arrows/Enter]  \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu  \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+      "\u{1b}[38;2;148;163;184m[P1: WASD/R] [P2: Arrows] \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu " ++ music_btn(muted) ++ " \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
     case True{} False{}:
-      "\u{1b}[38;2;148;163;184m[WASD / ↑↓←→] Move   \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Vote   \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu   \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+      "\u{1b}[38;2;148;163;184m[WASD/↑↓←→] \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Vote \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu " ++ music_btn(muted) ++ " \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
     case False{} True{}:
-      "\u{1b}[1;38;2;250;204;21m[P1: R / P2: Enter]\u{1b}[0m Play Again   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+      "\u{1b}[1;38;2;250;204;21m[P1:R/P2:Enter]\u{1b}[0m Again \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu " ++ music_btn(muted) ++ "\u{1b}[0m \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
     case False{} False{}:
-      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Vote Play Again   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Vote Again \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu " ++ music_btn(muted) ++ "\u{1b}[0m \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
 
-def render_coop_frame(g: GameState, +w_nat: Nat, d: Diff, rv: RestartVote, +is_local: Bool, +cols: U32, +rows: U32, +theme: U32) -> String:
+def render_coop_frame(g: GameState, +w_nat: Nat, d: Diff, rv: RestartVote, +is_local: Bool, +cols: U32, +rows: U32, +theme: U32, +muted: U32) -> String:
   Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
   +pad_x = center_pad(cols, 50)
   +pad_y = center_pad(rows, 21)
@@ -609,7 +616,7 @@ def render_coop_frame(g: GameState, +w_nat: Nat, d: Diff, rv: RestartVote, +is_l
   grid = render_grid_par(w_nat, pad_x, head, food, body, alive, theme)
   status = render_coop_status(alive, score, high_score)
   wait_line = render_restart_wait(rv, is_local, pad_x)
-  footer = coop_footer(alive, is_local)
+  footer = coop_footer(alive, is_local, muted)
   wrap_cabinet(pad_x, pad_y, theme, title_osc, header, status, wait_line, grid, footer)
 
 # Versus Mode: 2 Snakes Duel
@@ -867,22 +874,22 @@ def render_versus_status(winner: VersusWinner, +s1: U32, +s2: U32, +w1: U32, +w2
     case Draw{}:
       "\u{1b}[1;38;2;248;113;113m⚔️ DRAW! ⚔️\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[1;38;2;250;204;21m(W:" ++ U32.show(w1) ++ "-" ++ U32.show(w2) ++ ")\u{1b}[0m"
 
-def versus_footer(winner: VersusWinner, is_local: Bool) -> String:
+def versus_footer(winner: VersusWinner, is_local: Bool, +muted: U32) -> String:
   match winner is_local:
     case Active{} True{}:
-      "\u{1b}[38;2;148;163;184m[P1: WASD/R]  [P2: Arrows/Enter]  \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu  \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+      "\u{1b}[38;2;148;163;184m[P1: WASD/R] [P2: Arrows] \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu " ++ music_btn(muted) ++ " \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
     case Active{} False{}:
-      "\u{1b}[38;2;148;163;184m[WASD / ↑↓←→] Move   \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Vote   \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu   \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+      "\u{1b}[38;2;148;163;184m[WASD/↑↓←→] \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Vote \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu " ++ music_btn(muted) ++ " \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
     case _ True{}:
-      "\u{1b}[1;38;2;250;204;21m[P1: R / P2: Enter]\u{1b}[0m Rematch   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+      "\u{1b}[1;38;2;250;204;21m[P1:R/P2:Enter]\u{1b}[0m Rematch \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu " ++ music_btn(muted) ++ "\u{1b}[0m \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
     case _ False{}:
-      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Both Rematch   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Both Rematch \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu " ++ music_btn(muted) ++ "\u{1b}[0m \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
 
 def get_versus_max_score(vg: VersusState) -> U32:
   VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, +seed, +w1, +w2} = vg
   max_score(s1, s2)
 
-def render_versus_frame(vg: VersusState, +w_nat: Nat, d: Diff, rv: RestartVote, +is_local: Bool, +cols: U32, +rows: U32, +theme: U32) -> String:
+def render_versus_frame(vg: VersusState, +w_nat: Nat, d: Diff, rv: RestartVote, +is_local: Bool, +cols: U32, +rows: U32, +theme: U32, +muted: U32) -> String:
   VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, +seed, +w1, +w2} = vg
   +pad_x = center_pad(cols, 50)
   +pad_y = center_pad(rows, 21)
@@ -893,7 +900,7 @@ def render_versus_frame(vg: VersusState, +w_nat: Nat, d: Diff, rv: RestartVote, 
   grid = render_versus_grid_par(w_nat, pad_x, h1, b1, a1, h2, b2, a2, food, theme)
   status = render_versus_status(winner, s1, s2, w1, w2)
   wait_line = render_restart_wait(rv, is_local, pad_x)
-  footer = versus_footer(winner, is_local)
+  footer = versus_footer(winner, is_local, muted)
   wrap_cabinet(pad_x, pad_y, theme, title_osc, header, status, wait_line, grid, footer)
 
 def diff_menu_text(d: Diff, +bg: String) -> String:
@@ -912,15 +919,28 @@ def diff_menu_line(d: Diff, +pfx: String) -> String:
   +bg = {"\u{1b}[48;2;10;14;23m" : String}
   pfx ++ s ++ bg ++ diff_menu_text(d, bg) ++ s ++ "\u{1b}[K\n"
 
-def render_menu(d: Diff, +cols: U32, +rows: U32) -> String:
+def music_menu_text(+muted: U32, +bg: String) -> String:
+  match muted:
+    case 0:
+      "  \u{1b}[1;38;2;74;222;128m[B]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mMusic:\u{1b}[0m" ++ bg ++ " \u{1b}[1;38;2;232;121;249m🎵 Dungeon Boss\u{1b}[0m" ++ bg ++ "                    \u{1b}[0m"
+    case _:
+      "  \u{1b}[1;38;2;148;163;184m[B]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mMusic:\u{1b}[0m" ++ bg ++ " \u{1b}[90m🔇 Muted\u{1b}[0m" ++ bg ++ "                           \u{1b}[0m"
+
+def music_menu_line(+muted: U32, +pfx: String) -> String:
+  +s = cabinet_side(0)
+  +bg = {"\u{1b}[48;2;10;14;23m" : String}
+  pfx ++ s ++ bg ++ music_menu_text(muted, bg) ++ s ++ "\u{1b}[K\n"
+
+def render_menu(d: Diff, +cols: U32, +rows: U32, +muted: U32) -> String:
   +pad_x = center_pad(cols, 50)
-  +pad_y = center_pad(rows, 20)
+  +pad_y = center_pad(rows, 21)
   +pfx = row_prefix(pad_x)
   +s = cabinet_side(0)
   +bg = {"\u{1b}[48;2;10;14;23m" : String}
   +mid = {"\u{1b}[38;2;56;189;248;48;2;10;14;23m╠════════════════════════════════════════════════╣\u{1b}[0m\u{1b}[K\n" : String}
   +blank = pfx ++ s ++ bg ++ "                                                \u{1b}[0m" ++ s ++ "\u{1b}[K\n"
   dline = diff_menu_line(d, pfx)
+  mline = music_menu_line(muted, pfx)
   "\u{1b}[?2026h\u{1b}[H\u{1b}]2;🐍 Bend Snake Arcade\u{07}" ++
   top_blank_lines(U32.to_nat(pad_y)) ++
   pfx ++ "\u{1b}[1;38;2;250;204;21m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\u{1b}[K\n" ++
@@ -938,9 +958,10 @@ def render_menu(d: Diff, +cols: U32, +rows: U32) -> String:
   pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;250;204;21m[6]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mLocal Versus\u{1b}[0m" ++ bg ++ "     - 1 keyboard (WASD/Arrow)\u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
   pfx ++ mid ++
   dline ++
+  mline ++
   pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mQuit Game\u{1b}[0m" ++ bg ++ "                                 \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
   pfx ++ mid ++
-  pfx ++ s ++ bg ++ "  \u{1b}[90mDefault Port: 4242  │  [1-6, D, ←/→, Q]\u{1b}[0m" ++ bg ++ "       \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  pfx ++ s ++ bg ++ "  \u{1b}[90mDefault Port: 4242  │  [1-6, D, B, ←/→, Q]\u{1b}[0m" ++ bg ++ "    \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
   pfx ++ cabinet_border_bot(0) ++
   "\u{1b}[2K\n" ++
-  pfx ++ "\u{1b}[1;37mSelect an option [1-6, D, Q]: \u{1b}[0m\u{1b}[K\u{1b}[J\u{1b}[?2026l"
+  pfx ++ "\u{1b}[1;37mSelect an option [1-6, D, B, Q]: \u{1b}[0m\u{1b}[K\u{1b}[J\u{1b}[?2026l"

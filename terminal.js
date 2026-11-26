@@ -287,7 +287,25 @@ io_eff(CID(get_random_seed), get_random_seed);
 io_eff(CID(check_update), check_update);
 io_eff(CID(net_set_lan_diff), net_set_lan_diff);
 io_eff(CID(net_get_lan_diff), net_get_lan_diff);
+let jsMuted = 0;
+
+function toggle_mute() {
+  jsMuted = jsMuted ? 0 : 1;
+  return jsMuted >>> 0;
+}
+
+function is_muted() {
+  return jsMuted >>> 0;
+}
+
+function play_sfx(kind) {
+  return {$: CID(Unit)};
+}
+
 io_eff(CID(net_set_lan_mode), net_set_lan_mode);
 io_eff(CID(net_browse_join), net_browse_join);
 io_eff(CID(get_term_cols), get_term_cols);
 io_eff(CID(get_term_rows), get_term_rows);
+io_eff(CID(toggle_mute), toggle_mute);
+io_eff(CID(is_muted), is_muted);
+io_eff(CID(play_sfx), play_sfx);
