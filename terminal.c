@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <math.h>
 #include <pthread.h>
+#include <dlfcn.h>
 
 static struct termios orig_termios;
 static int raw_mode_set = 0;
@@ -29,7 +30,7 @@ static int term_active = 0;
 static int cleanup_registered = 0;
 
 // --- Zero-Dep C Synth Audio Engine (Dungeon Boss + SFX) ---
-#define AUDIO_RATE 44100
+#define AUDIO_RATE 48000
 #define AUDIO_PI 3.14159265358979323846f
 
 static volatile int audio_running = 0;
@@ -40,24 +41,36 @@ static pid_t audio_child_pid = -1;
 static pthread_t audio_thread;
 static int audio_thread_started = 0;
 
+// Runtime ALSA handles via dlopen("libasound.so.2") — no compile-time dev headers needed
+typedef int (*alsa_open_fn)(void**, const char*, int, int);
+typedef int (*alsa_set_params_fn)(void*, int, int, unsigned int, unsigned int, int, unsigned int);
+typedef long (*alsa_writei_fn)(void*, const void*, unsigned long);
+typedef int (*alsa_recover_fn)(void*, int, int);
+typedef int (*alsa_drop_fn)(void*);
+typedef int (*alsa_close_fn)(void*);
+
+static void* alsa_dl = NULL;
+static void* alsa_pcm = NULL;
+static alsa_writei_fn alsa_writei = NULL;
+static alsa_recover_fn alsa_recover = NULL;
+static alsa_drop_fn alsa_drop = NULL;
+static alsa_close_fn alsa_close = NULL;
+
 static float synth_midi_hz(int note) {
   if (note < 0) return 0.0f;
   return 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
 }
-static float synth_pulse(float ph, float duty) {
-  float p = ph - floorf(ph);
+static float synth_wrap(float ph) {
+  return ph - floorf(ph);
+}
+static float synth_pulse(float p, float duty) {
   return (p < duty) ? 1.0f : -1.0f;
 }
-static float synth_saw(float ph) {
-  float p = ph - floorf(ph);
+static float synth_saw(float p) {
   return 2.0f * p - 1.0f;
 }
-static float synth_tri(float ph) {
-  float p = ph - floorf(ph);
-  return 4.0f * fabsf(p - 0.5f) - 1.0f;
-}
-static float synth_sine(float ph) {
-  return sinf(2.0f * AUDIO_PI * (ph - floorf(ph)));
+static float synth_sine(float p) {
+  return sinf(2.0f * AUDIO_PI * p);
 }
 
 static const int DB_LEAD[64] = {
@@ -114,11 +127,32 @@ static int audio_write_all(int fd, const void* buf, size_t len) {
   return 1;
 }
 
+static int audio_write_frames(const int16_t* pcm, int frames) {
+  if (alsa_pcm && alsa_writei) {
+    int offset = 0;
+    while (offset < frames) {
+      if (!__atomic_load_n(&audio_running, __ATOMIC_ACQUIRE)) return 0;
+      long n = alsa_writei(alsa_pcm, pcm + offset * 2, (unsigned long)(frames - offset));
+      if (n > 0) {
+        offset += (int)n;
+      } else if (n == -EAGAIN || n == -EINTR) {
+        continue;
+      } else if (alsa_recover) {
+        if (alsa_recover(alsa_pcm, (int)n, 1) < 0) return 0;
+      } else {
+        return 0;
+      }
+    }
+    return 1;
+  }
+  return audio_write_all(audio_pipe_fd, pcm, (size_t)frames * 4u);
+}
+
 static void* audio_synth_worker(void* arg) {
   (void)arg;
   const int samples_per_step = (int)((60.0f / 142.0f / 4.0f) * AUDIO_RATE);
   uint32_t rng = 0x9E3779B9u;
-  float lead_ph = 0.0f, bass_ph = 0.0f, arp_ph = 0.0f, kick_ph = 0.0f;
+  float lead_ph = 0.0f, bass_ph = 0.0f, arp_ph = 0.0f, kick_ph = 0.0f, vib_ph = 0.0f;
   float lead_hz = 0.0f, bass_hz = 0.0f, arp_hz = 0.0f;
   float lead_env = 0.0f, bass_env = 0.0f, arp_env = 0.0f;
   float kick_env = 0.0f, snare_env = 0.0f, hat_env = 0.0f;
@@ -132,7 +166,6 @@ static void* audio_synth_worker(void* arg) {
 
   int step = 0;
   int step_sample = 0;
-  uint32_t total_frames = 0;
   int16_t pcm[512 * 2];
 
   while (__atomic_load_n(&audio_running, __ATOMIC_ACQUIRE)) {
@@ -157,54 +190,54 @@ static void* audio_synth_worker(void* arg) {
       int req = __atomic_exchange_n(&audio_sfx_req, 0, __ATOMIC_ACQ_REL);
       if (req == 1) {
         sfx_type = 1;
-        sfx_total = AUDIO_RATE / 7; // ~142ms coin/apple chime
+        sfx_total = AUDIO_RATE / 7;
         sfx_samples_left = sfx_total;
         sfx_ph = 0.0f;
       } else if (req == 2) {
         sfx_type = 2;
-        sfx_total = AUDIO_RATE / 3; // ~333ms crash crunch
+        sfx_total = AUDIO_RATE / 3;
         sfx_samples_left = sfx_total;
         sfx_ph = 0.0f;
       }
 
-      float time_s = (float)total_frames / AUDIO_RATE;
-      float vib = 1.0f + 0.004f * sinf(2.0f * AUDIO_PI * 5.8f * time_s);
-      lead_ph += (lead_hz * vib) / AUDIO_RATE;
-      bass_ph += bass_hz / AUDIO_RATE;
-      arp_ph += arp_hz / AUDIO_RATE;
+      vib_ph = synth_wrap(vib_ph + 5.8f / AUDIO_RATE);
+      float vib = 1.0f + 0.004f * synth_sine(vib_ph);
+      lead_ph = synth_wrap(lead_ph + (lead_hz * vib) / AUDIO_RATE);
+      bass_ph = synth_wrap(bass_ph + bass_hz / AUDIO_RATE);
+      arp_ph = synth_wrap(arp_ph + arp_hz / AUDIO_RATE);
 
       float lead_sig = (synth_saw(lead_ph) * 0.15f + synth_pulse(lead_ph, 0.50f) * 0.14f) * lead_env;
-      lead_env *= 0.99975f;
+      lead_env *= 0.99977f;
 
       float bass_sig = (synth_saw(bass_ph) * 0.18f + synth_sine(bass_ph) * 0.22f) * bass_env;
-      bass_env *= 0.99965f;
+      bass_env *= 0.99968f;
 
       float arp_sig = synth_pulse(arp_ph, 0.18f) * 0.10f * arp_env;
-      arp_env *= 0.9992f;
+      arp_env *= 0.99927f;
 
       float kick_freq = 48.0f + 120.0f * kick_env * kick_env;
-      kick_ph += kick_freq / AUDIO_RATE;
+      kick_ph = synth_wrap(kick_ph + kick_freq / AUDIO_RATE);
       float kick_sig = synth_sine(kick_ph) * 0.36f * kick_env;
-      kick_env *= 0.9987f;
+      kick_env *= 0.9988f;
 
       rng = rng * 1664525u + 1013904223u;
       float nz = ((float)((rng >> 16) & 0xFFFFu) / 32767.5f) - 1.0f;
       float snare_sig = nz * 0.22f * snare_env;
-      snare_env *= 0.9980f;
+      snare_env *= 0.9982f;
 
       float hat_sig = nz * 0.07f * hat_env;
-      hat_env *= 0.9955f;
+      hat_env *= 0.9959f;
 
       float sfx_sig = 0.0f;
       if (sfx_samples_left > 0) {
         float prog = 1.0f - ((float)sfx_samples_left / (float)sfx_total);
         if (sfx_type == 1) {
-          float f = (prog < 0.42f) ? 1046.5f : 1318.5f; // C6 -> E6
-          sfx_ph += f / AUDIO_RATE;
+          float f = (prog < 0.42f) ? 1046.5f : 1318.5f;
+          sfx_ph = synth_wrap(sfx_ph + f / AUDIO_RATE);
           sfx_sig = synth_pulse(sfx_ph, 0.25f) * 0.22f * (1.0f - prog * 0.6f);
         } else {
           float f = 220.0f * (1.0f - 0.72f * prog);
-          sfx_ph += f / AUDIO_RATE;
+          sfx_ph = synth_wrap(sfx_ph + f / AUDIO_RATE);
           sfx_sig = (synth_saw(sfx_ph) * 0.22f + nz * 0.14f) * (1.0f - prog);
         }
         sfx_samples_left--;
@@ -216,38 +249,91 @@ static void* audio_synth_worker(void* arg) {
       } else {
         float mix_l = lead_sig * 0.95f + arp_sig * 1.15f + bass_sig + kick_sig + snare_sig * 0.95f + hat_sig * 1.15f;
         float mix_r = lead_sig * 1.05f + arp_sig * 0.85f + bass_sig + kick_sig + snare_sig * 1.05f + hat_sig * 0.85f;
-        lp_l += 0.42f * (mix_l - lp_l);
-        lp_r += 0.42f * (mix_r - lp_r);
-        float out_l = tanhf((lp_l * 0.82f) + sfx_sig) * 0.75f;
-        float out_r = tanhf((lp_r * 0.82f) + sfx_sig) * 0.75f;
+        lp_l += 0.39f * (mix_l - lp_l);
+        lp_r += 0.39f * (mix_r - lp_r);
+        float out_l = tanhf((lp_l * 0.72f) + sfx_sig) * 0.68f;
+        float out_r = tanhf((lp_r * 0.72f) + sfx_sig) * 0.68f;
         pcm[i * 2] = (int16_t)(out_l * 32767.0f);
         pcm[i * 2 + 1] = (int16_t)(out_r * 32767.0f);
       }
 
-      total_frames++;
       step_sample++;
       if (step_sample >= samples_per_step) {
         step_sample = 0;
         step = (step + 1) % 64;
       }
     }
-    if (!audio_write_all(audio_pipe_fd, pcm, sizeof(pcm))) {
+    if (!audio_write_frames(pcm, 512)) {
       break;
     }
   }
+
+  if (alsa_pcm) {
+    if (alsa_drop) alsa_drop(alsa_pcm);
+    if (alsa_close) alsa_close(alsa_pcm);
+    alsa_pcm = NULL;
+  }
+  if (alsa_dl) {
+    dlclose(alsa_dl);
+    alsa_dl = NULL;
+  }
   return NULL;
+}
+
+static int try_open_alsa_dl(void) {
+  void* dl = dlopen("libasound.so.2", RTLD_LAZY);
+  if (!dl) return 0;
+  alsa_open_fn fn_open = (alsa_open_fn)dlsym(dl, "snd_pcm_open");
+  alsa_set_params_fn fn_params = (alsa_set_params_fn)dlsym(dl, "snd_pcm_set_params");
+  alsa_writei_fn fn_writei = (alsa_writei_fn)dlsym(dl, "snd_pcm_writei");
+  alsa_recover_fn fn_recover = (alsa_recover_fn)dlsym(dl, "snd_pcm_recover");
+  alsa_drop_fn fn_drop = (alsa_drop_fn)dlsym(dl, "snd_pcm_drop");
+  alsa_close_fn fn_close = (alsa_close_fn)dlsym(dl, "snd_pcm_close");
+  if (!fn_open || !fn_params || !fn_writei || !fn_close) {
+    dlclose(dl);
+    return 0;
+  }
+  void* pcm = NULL;
+  if (fn_open(&pcm, "default", 0, 0) < 0 || !pcm) {
+    dlclose(dl);
+    return 0;
+  }
+  if (fn_params(pcm, 2, 3, 2, AUDIO_RATE, 1, 80000) < 0) {
+    fn_close(pcm);
+    dlclose(dl);
+    return 0;
+  }
+  alsa_dl = dl;
+  alsa_pcm = pcm;
+  alsa_writei = fn_writei;
+  alsa_recover = fn_recover;
+  alsa_drop = fn_drop;
+  alsa_close = fn_close;
+  return 1;
 }
 
 static void audio_start(void) {
   if (audio_thread_started || !isatty(STDIN_FILENO) || getenv("SNAKE_NO_AUDIO")) {
     return;
   }
+  signal(SIGPIPE, SIG_IGN);
+
+  if (try_open_alsa_dl()) {
+    __atomic_store_n(&audio_running, 1, __ATOMIC_RELEASE);
+    if (pthread_create(&audio_thread, NULL, audio_synth_worker, NULL) == 0) {
+      audio_thread_started = 1;
+      return;
+    }
+    __atomic_store_n(&audio_running, 0, __ATOMIC_RELEASE);
+    if (alsa_close && alsa_pcm) alsa_close(alsa_pcm);
+    alsa_pcm = NULL;
+    if (alsa_dl) { dlclose(alsa_dl); alsa_dl = NULL; }
+    return;
+  }
+
+  // Fallback to pipe-based CLI player at native 48kHz if libasound.so.2 is unavailable
   int pfd[2];
   if (pipe(pfd) != 0) return;
-#ifdef F_SETPIPE_SZ
-  fcntl(pfd[1], F_SETPIPE_SZ, 8192);
-#endif
-  signal(SIGPIPE, SIG_IGN);
 
   pid_t pid = fork();
   if (pid == 0) {
@@ -260,9 +346,9 @@ static void audio_start(void) {
       dup2(devnull, STDERR_FILENO);
       close(devnull);
     }
-    execlp("pw-play", "pw-play", "--raw", "--rate", "44100", "--channels", "2", "--format", "s16", "--volume", "0.55", "-", (char*)NULL);
-    execlp("paplay", "paplay", "--raw", "--rate=44100", "--channels=2", "--format=s16le", "--volume=36000", (char*)NULL);
-    execlp("aplay", "aplay", "-q", "-f", "S16_LE", "-r", "44100", "-c", "2", "-t", "raw", "-", (char*)NULL);
+    execlp("paplay", "paplay", "--raw", "--rate=48000", "--channels=2", "--format=s16le", "--volume=34000", (char*)NULL);
+    execlp("aplay", "aplay", "-q", "-f", "S16_LE", "-r", "48000", "-c", "2", "-t", "raw", "-", (char*)NULL);
+    execlp("pw-play", "pw-play", "--raw", "--rate", "48000", "--channels", "2", "--format", "s16", "--volume", "0.50", "-", (char*)NULL);
     _exit(127);
   }
   close(pfd[0]);
