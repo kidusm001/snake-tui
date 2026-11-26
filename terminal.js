@@ -36,7 +36,7 @@ function term_init() {
     }
   } catch (e) {}
   attachListener();
-  process.stdout.write("\x1b[2J\x1b[H\x1b[?25l");
+  process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l\x1b]2;Snake TUI\x07");
   return {$: CID(Unit)};
 }
 
@@ -46,8 +46,16 @@ function term_restore() {
       process.stdin.setRawMode(false);
     }
   } catch (e) {}
-  process.stdout.write("\x1b[?25h\n");
+  process.stdout.write("\x1b[0m\x1b[?2026l\x1b[?25h\x1b[?1049l\x1b]2;\x07");
   return {$: CID(Unit)};
+}
+
+function get_term_cols() {
+  return ((process.stdout && process.stdout.columns) || 80) >>> 0;
+}
+
+function get_term_rows() {
+  return ((process.stdout && process.stdout.rows) || 24) >>> 0;
 }
 
 function term_poll_key() {
@@ -281,3 +289,5 @@ io_eff(CID(net_set_lan_diff), net_set_lan_diff);
 io_eff(CID(net_get_lan_diff), net_get_lan_diff);
 io_eff(CID(net_set_lan_mode), net_set_lan_mode);
 io_eff(CID(net_browse_join), net_browse_join);
+io_eff(CID(get_term_cols), get_term_cols);
+io_eff(CID(get_term_rows), get_term_rows);

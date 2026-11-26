@@ -11,9 +11,33 @@ def is_restart(+k: U32) -> Bool:
 def is_menu(+k: U32) -> Bool:
   U32.is_eq(k, 109)
 
+@unsafe def write_menu(+d: Snake.Diff) -> IO(Unit):
+  do IO<Unit>:
+    cols : U32 <- Term.get_term_cols()
+    rows : U32 <- Term.get_term_rows()
+    IO.write(Snake.render_menu(d, cols, rows))
+
+@unsafe def write_solo_frame(g: Snake.GameState, d: Snake.Diff) -> IO(Unit):
+  do IO<Unit>:
+    cols : U32 <- Term.get_term_cols()
+    rows : U32 <- Term.get_term_rows()
+    IO.write(Snake.render_frame(g, 24n, d, cols, rows))
+
+@unsafe def write_coop_frame(g: Snake.GameState, d: Snake.Diff, rv: Snake.RestartVote, is_local: Bool) -> IO(Unit):
+  do IO<Unit>:
+    cols : U32 <- Term.get_term_cols()
+    rows : U32 <- Term.get_term_rows()
+    IO.write(Snake.render_coop_frame(g, 24n, d, rv, is_local, cols, rows))
+
+@unsafe def write_versus_frame(vg: Snake.VersusState, d: Snake.Diff, rv: Snake.RestartVote, is_local: Bool) -> IO(Unit):
+  do IO<Unit>:
+    cols : U32 <- Term.get_term_cols()
+    rows : U32 <- Term.get_term_rows()
+    IO.write(Snake.render_versus_frame(vg, 24n, d, rv, is_local, cols, rows))
+
 @unsafe def return_to_menu(+d: Snake.Diff) -> IO(Unit):
   do IO<Unit>:
-    IO.write(Snake.render_menu(d))
+    write_menu(d)
     menu_loop(100000n, d)
 
 @unsafe def net_return_to_menu(+d: Snake.Diff) -> IO(Unit):
@@ -65,18 +89,16 @@ def filter_p2_key(+k: U32) -> U32:
       Snake.Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
       +cur_best = Snake.max_score(high_score, score)
       +new_g : Snake.GameState = Snake.new_game(Snake.next_seed(seed), cur_best)
-      frame : String = Snake.render_frame(new_g, 24n, d)
       do IO<Unit>:
         Term.save_high_score(cur_best, Snake.diff_to_u32(d))
-        IO.write(frame)
+        write_solo_frame(new_g, d)
         IO.sleep(Snake.calc_tick_ms(d, 0))
         solo_loop(p, new_g, d)
     case False{}:
       +next_g : Snake.GameState = Snake.step_game(g, k, 24, 16)
-      frame : String = Snake.render_frame(next_g, 24n, d)
       do IO<Unit>:
         Term.save_high_score(Snake.get_high_score(next_g), Snake.diff_to_u32(d))
-        IO.write(frame)
+        write_solo_frame(next_g, d)
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_score(next_g)))
         solo_loop(p, next_g, d)
 
@@ -114,18 +136,16 @@ def filter_p2_key(+k: U32) -> U32:
       Snake.Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
       +new_g : Snake.GameState = Snake.new_game(Snake.next_seed(seed), high_score)
       +nr : Snake.RestartVote = Snake.restart_none()
-      frame : String = Snake.render_coop_frame(new_g, 24n, d, nr, True{})
       do IO<Unit>:
-        IO.write(frame)
+        write_coop_frame(new_g, d, nr, True{})
         IO.sleep(Snake.calc_tick_ms(d, 0))
         coop_local_loop(p, new_g, d, nr)
     case False{}:
       +k1 = filter_p1_key(k)
       +k2 = filter_p2_key(k)
       +next_g : Snake.GameState = Snake.step_coop(g, k1, k2, 24, 16)
-      frame : String = Snake.render_coop_frame(next_g, 24n, d, rv, True{})
       do IO<Unit>:
-        IO.write(frame)
+        write_coop_frame(next_g, d, rv, True{})
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_score(next_g)))
         coop_local_loop(p, next_g, d, rv)
 
@@ -159,18 +179,16 @@ def filter_p2_key(+k: U32) -> U32:
     case True{}:
       +new_vg : Snake.VersusState = Snake.restart_versus_game(vg)
       +nr : Snake.RestartVote = Snake.restart_none()
-      frame : String = Snake.render_versus_frame(new_vg, 24n, d, nr, True{})
       do IO<Unit>:
-        IO.write(frame)
+        write_versus_frame(new_vg, d, nr, True{})
         IO.sleep(Snake.calc_tick_ms(d, 0))
         versus_local_loop(p, new_vg, d, nr)
     case False{}:
       +k1 = filter_p1_key(k)
       +k2 = filter_p2_key(k)
       +next_vg : Snake.VersusState = Snake.step_versus(vg, k1, k2, 24, 16)
-      frame : String = Snake.render_versus_frame(next_vg, 24n, d, rv, True{})
       do IO<Unit>:
-        IO.write(frame)
+        write_versus_frame(next_vg, d, rv, True{})
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_versus_max_score(next_vg)))
         versus_local_loop(p, next_vg, d, rv)
 
@@ -205,16 +223,14 @@ def filter_p2_key(+k: U32) -> U32:
       Snake.Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
       +new_g : Snake.GameState = Snake.new_game(Snake.next_seed(seed), high_score)
       +nr : Snake.RestartVote = Snake.restart_none()
-      frame : String = Snake.render_coop_frame(new_g, 24n, d, nr, False{})
       do IO<Unit>:
-        IO.write(frame)
+        write_coop_frame(new_g, d, nr, False{})
         IO.sleep(Snake.calc_tick_ms(d, 0))
         coop_host_loop(p, new_g, d, nr)
     case False{}:
       +next_g : Snake.GameState = Snake.step_coop(g, k1, k2, 24, 16)
-      frame : String = Snake.render_coop_frame(next_g, 24n, d, rv, False{})
       do IO<Unit>:
-        IO.write(frame)
+        write_coop_frame(next_g, d, rv, False{})
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_score(next_g)))
         coop_host_loop(p, next_g, d, rv)
 
@@ -255,16 +271,14 @@ def filter_p2_key(+k: U32) -> U32:
       Snake.Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
       +new_g : Snake.GameState = Snake.new_game(Snake.next_seed(seed), high_score)
       +nr : Snake.RestartVote = Snake.restart_none()
-      frame : String = Snake.render_coop_frame(new_g, 24n, d, nr, False{})
       do IO<Unit>:
-        IO.write(frame)
+        write_coop_frame(new_g, d, nr, False{})
         IO.sleep(Snake.calc_tick_ms(d, 0))
         coop_join_loop(p, new_g, d, nr)
     case False{}:
       +next_g : Snake.GameState = Snake.step_coop(g, k1, k2, 24, 16)
-      frame : String = Snake.render_coop_frame(next_g, 24n, d, rv, False{})
       do IO<Unit>:
-        IO.write(frame)
+        write_coop_frame(next_g, d, rv, False{})
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_score(next_g)))
         coop_join_loop(p, next_g, d, rv)
 
@@ -304,16 +318,14 @@ def filter_p2_key(+k: U32) -> U32:
     case True{}:
       +new_vg : Snake.VersusState = Snake.restart_versus_game(vg)
       +nr : Snake.RestartVote = Snake.restart_none()
-      frame : String = Snake.render_versus_frame(new_vg, 24n, d, nr, False{})
       do IO<Unit>:
-        IO.write(frame)
+        write_versus_frame(new_vg, d, nr, False{})
         IO.sleep(Snake.calc_tick_ms(d, 0))
         versus_host_loop(p, new_vg, d, nr)
     case False{}:
       +next_vg : Snake.VersusState = Snake.step_versus(vg, k1, k2, 24, 16)
-      frame : String = Snake.render_versus_frame(next_vg, 24n, d, rv, False{})
       do IO<Unit>:
-        IO.write(frame)
+        write_versus_frame(next_vg, d, rv, False{})
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_versus_max_score(next_vg)))
         versus_host_loop(p, next_vg, d, rv)
 
@@ -353,16 +365,14 @@ def filter_p2_key(+k: U32) -> U32:
     case True{}:
       +new_vg : Snake.VersusState = Snake.restart_versus_game(vg)
       +nr : Snake.RestartVote = Snake.restart_none()
-      frame : String = Snake.render_versus_frame(new_vg, 24n, d, nr, False{})
       do IO<Unit>:
-        IO.write(frame)
+        write_versus_frame(new_vg, d, nr, False{})
         IO.sleep(Snake.calc_tick_ms(d, 0))
         versus_join_loop(p, new_vg, d, nr)
     case False{}:
       +next_vg : Snake.VersusState = Snake.step_versus(vg, k1, k2, 24, 16)
-      frame : String = Snake.render_versus_frame(next_vg, 24n, d, rv, False{})
       do IO<Unit>:
-        IO.write(frame)
+        write_versus_frame(next_vg, d, rv, False{})
         IO.sleep(Snake.calc_tick_ms(d, Snake.get_versus_max_score(next_vg)))
         versus_join_loop(p, next_vg, d, rv)
 
@@ -404,16 +414,14 @@ def filter_p2_key(+k: U32) -> U32:
         +seed : U32 <- Term.get_random_seed()
         +g : Snake.GameState = Snake.new_game(seed, 0)
         +nr : Snake.RestartVote = Snake.restart_none()
-        frame : String = Snake.render_coop_frame(g, 24n, d, nr, False{})
-        IO.write(frame)
+        write_coop_frame(g, d, nr, False{})
         coop_host_loop(1000000n, g, d, nr)
     case 4:
       do IO<Unit>:
         +seed : U32 <- Term.get_random_seed()
         +vg : Snake.VersusState = Snake.new_versus_game(seed)
         +nr : Snake.RestartVote = Snake.restart_none()
-        frame : String = Snake.render_versus_frame(vg, 24n, d, nr, False{})
-        IO.write(frame)
+        write_versus_frame(vg, d, nr, False{})
         versus_host_loop(1000000n, vg, d, nr)
     case _:
       Term.restore()
@@ -466,8 +474,7 @@ def filter_p2_key(+k: U32) -> U32:
         +d : Snake.Diff = Snake.u32_to_diff(diff_u)
         +g : Snake.GameState = Snake.new_game(seed, 0)
         +nr : Snake.RestartVote = Snake.restart_none()
-        frame : String = Snake.render_coop_frame(g, 24n, d, nr, False{})
-        IO.write(frame)
+        write_coop_frame(g, d, nr, False{})
         coop_join_loop(1000000n, g, d, nr)
     case False{}:
       do IO<Unit>:
@@ -484,8 +491,7 @@ def filter_p2_key(+k: U32) -> U32:
         +d : Snake.Diff = Snake.u32_to_diff(diff_u)
         +vg : Snake.VersusState = Snake.new_versus_game(seed)
         +nr : Snake.RestartVote = Snake.restart_none()
-        frame : String = Snake.render_versus_frame(vg, 24n, d, nr, False{})
-        IO.write(frame)
+        write_versus_frame(vg, d, nr, False{})
         versus_join_loop(1000000n, vg, d, nr)
     case False{}:
       do IO<Unit>:
@@ -511,8 +517,7 @@ def filter_p2_key(+k: U32) -> U32:
         saved_high : U32 <- Term.load_high_score(Snake.diff_to_u32(d))
         +seed : U32 <- Term.get_random_seed()
         +g : Snake.GameState = Snake.new_game(seed, saved_high)
-        frame : String = Snake.render_frame(g, 24n, d)
-        IO.write(frame)
+        write_solo_frame(g, d)
         solo_loop(1000000n, g, d)
     case 50:
       # [2] Host LAN Co-op
@@ -539,8 +544,7 @@ def filter_p2_key(+k: U32) -> U32:
         +seed : U32 <- Term.get_random_seed()
         +g : Snake.GameState = Snake.new_game(seed, 0)
         +nr : Snake.RestartVote = Snake.restart_none()
-        frame : String = Snake.render_coop_frame(g, 24n, d, nr, True{})
-        IO.write(frame)
+        write_coop_frame(g, d, nr, True{})
         coop_local_loop(1000000n, g, d, nr)
     case 54:
       # [6] Local Versus
@@ -548,26 +552,25 @@ def filter_p2_key(+k: U32) -> U32:
         +seed : U32 <- Term.get_random_seed()
         +vg : Snake.VersusState = Snake.new_versus_game(seed)
         +nr : Snake.RestartVote = Snake.restart_none()
-        frame : String = Snake.render_versus_frame(vg, 24n, d, nr, True{})
-        IO.write(frame)
+        write_versus_frame(vg, d, nr, True{})
         versus_local_loop(1000000n, vg, d, nr)
     case 100:
       # [D] Cycle Difficulty Forward
       +nd = Snake.next_diff(d)
       do IO<Unit>:
-        IO.write(Snake.render_menu(nd))
+        write_menu(nd)
         menu_loop(100000n, nd)
     case 203:
       # [Right] Cycle Difficulty Forward
       +nd = Snake.next_diff(d)
       do IO<Unit>:
-        IO.write(Snake.render_menu(nd))
+        write_menu(nd)
         menu_loop(100000n, nd)
     case 202:
       # [Left] Cycle Difficulty Backward
       +pd = Snake.prev_diff(d)
       do IO<Unit>:
-        IO.write(Snake.render_menu(pd))
+        write_menu(pd)
         menu_loop(100000n, pd)
     case 113:
       # [Q] Quit
@@ -598,5 +601,5 @@ def filter_p2_key(+k: U32) -> U32:
   do IO<Unit>:
     Term.init()
     Term.check_update()
-    IO.write(Snake.render_menu(d))
+    write_menu(d)
     menu_loop(100000n, d)

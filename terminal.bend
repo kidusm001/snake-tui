@@ -67,3 +67,11 @@ def check_update() -> IO(Unit):
 def net_close() -> IO(Unit):
   import "./terminal.c"
   import "./terminal.js"
+
+def get_term_cols() -> IO(U32):
+  import "./terminal.c"
+  import "./terminal.js"
+
+def get_term_rows() -> IO(U32):
+  import "./terminal.c"
+  import "./terminal.js"

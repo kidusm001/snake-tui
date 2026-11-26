@@ -312,86 +312,157 @@ def step_game(g: GameState, key: U32, w: U32, h: U32) -> GameState:
 def new_game(+seed: U32, +high_score: U32) -> GameState:
   Game{Pos{8, 6}, {[Pos{7, 6}, Pos{6, 6}] : +List<Pos>}, Right{}, Pos{14, 6}, 0, high_score, True{}, seed}
 
-# Rendering
+# Rendering & Ghostty TrueColor / Mode 2026 Helpers
+def center_pad_select(+size: U32, +need: U32, fits: Bool) -> U32:
+  match fits:
+    case True{}:
+      (((size - need : U32) / 2) : U32)
+    case False{}:
+      0
+
+def center_pad(+size: U32, +need: U32) -> U32:
+  center_pad_select(size, need, (size >= need : U32))
+
+def top_blank_lines(n: Nat) -> String:
+  match n:
+    case 0n:
+      ""
+    case 1n+p:
+      "\u{1b}[2K\n" ++ top_blank_lines(p)
+
+def row_prefix(+pad_x: U32) -> String:
+  "\u{1b}[2K\u{1b}[" ++ U32.show((pad_x + 1 : U32)) ++ "G"
+
+def cabinet_border_top() -> String:
+  "\u{1b}[38;2;56;189;248;48;2;10;14;23m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n"
+
+def cabinet_border_bot() -> String:
+  "\u{1b}[38;2;56;189;248;48;2;10;14;23m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\n"
+
+def cabinet_side() -> String:
+  "\u{1b}[38;2;56;189;248;48;2;10;14;23m║\u{1b}[0m"
+
+def is_odd_tile(+x: U32, +y: U32) -> Bool:
+  U32.is_eq(((x + y : U32) % 2 : U32), 1)
+
+def empty_cell_bg(odd: Bool) -> String:
+  match odd:
+    case True{}:
+      "\u{1b}[48;2;18;25;41m  \u{1b}[0m"
+    case False{}:
+      "\u{1b}[48;2;13;18;30m  \u{1b}[0m"
+
+def food_cell_bg(odd: Bool) -> String:
+  match odd:
+    case True{}:
+      "\u{1b}[48;2;18;25;41m🍎\u{1b}[0m"
+    case False{}:
+      "\u{1b}[48;2;13;18;30m🍎\u{1b}[0m"
+
 def head_glyph(alive: Bool) -> String:
   match alive:
     case True{}:
-      "\u{1b}[38;5;82m██\u{1b}[0m"
+      "\u{1b}[38;2;125;255;153;48;2;16;40;26m██\u{1b}[0m"
     case False{}:
-      "\u{1b}[1;31m✖✖\u{1b}[0m"
+      "\u{1b}[1;38;2;255;77;109;48;2;42;10;20m✖✖\u{1b}[0m"
 
-def cell_char_body(is_body: Bool) -> String:
+def green_body_glyph() -> String:
+  "\u{1b}[38;2;38;225;100;48;2;16;52;28m▓▓\u{1b}[0m"
+
+def cell_char_body(is_body: Bool, +x: U32, +y: U32) -> String:
   match is_body:
     case True{}:
-      "\u{1b}[38;5;40m▓▓\u{1b}[0m"
+      green_body_glyph()
     case False{}:
-      "  "
+      empty_cell_bg(is_odd_tile(x, y))
 
-def cell_char_food(is_food: Bool, is_body: Bool) -> String:
+def cell_char_food(is_food: Bool, is_body: Bool, +x: U32, +y: U32) -> String:
   match is_food:
     case True{}:
-      "🍎"
+      food_cell_bg(is_odd_tile(x, y))
     case False{}:
-      cell_char_body(is_body)
+      cell_char_body(is_body, x, y)
 
-def cell_char_head(is_head: Bool, is_food: Bool, is_body: Bool, alive: Bool) -> String:
+def cell_char_head(is_head: Bool, is_food: Bool, is_body: Bool, alive: Bool, +x: U32, +y: U32) -> String:
   match is_head:
     case True{}:
       head_glyph(alive)
     case False{}:
-      cell_char_food(is_food, is_body)
+      cell_char_food(is_food, is_body, x, y)
 
-def cell_char(+target: Pos, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
+def cell_char(+x: U32, +y: U32, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
+  +target = {Pos{x, y} : Pos}
   is_head = pos_eq(target, head)
   is_food = pos_eq(target, food)
   is_body = contains_pos(body, target)
-  cell_char_head(is_head, is_food, is_body, alive)
+  cell_char_head(is_head, is_food, is_body, alive, x, y)
 
 def render_cells(fuel: Nat, +x: U32, +y: U32, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
   match fuel:
     case 0n:
       ""
     case 1n+p:
-      c = cell_char(Pos{x, y}, head, food, body, alive)
+      c = cell_char(x, y, head, food, body, alive)
       c ++ render_cells(p, (x + 1 : U32), y, head, food, body, alive)
 
-def render_row(+y: U32, +w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
-  "\u{1b}[38;5;39m║\u{1b}[0m" ++ render_cells(w_nat, 0, y, head, food, body, alive) ++ "\u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+def render_row(+y: U32, +w_nat: Nat, +pad_x: U32, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
+  row_prefix(pad_x) ++ cabinet_side() ++ render_cells(w_nat, 0, y, head, food, body, alive) ++ cabinet_side() ++ "\u{1b}[K\n"
 
-def render_quad(+y: U32, +w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
-  r0 r1 = render_row(y, w_nat, head, food, body, alive) render_row((y + 1 : U32), w_nat, head, food, body, alive)
-  r2 r3 = render_row((y + 2 : U32), w_nat, head, food, body, alive) render_row((y + 3 : U32), w_nat, head, food, body, alive)
+def render_quad(+y: U32, +w_nat: Nat, +pad_x: U32, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
+  r0 r1 = render_row(y, w_nat, pad_x, head, food, body, alive) render_row((y + 1 : U32), w_nat, pad_x, head, food, body, alive)
+  r2 r3 = render_row((y + 2 : U32), w_nat, pad_x, head, food, body, alive) render_row((y + 3 : U32), w_nat, pad_x, head, food, body, alive)
   (r0 ++ r1) ++ (r2 ++ r3)
 
-def render_grid_par(+w_nat: Nat, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
-  q0 q1 = render_quad(0, w_nat, head, food, body, alive) render_quad(4, w_nat, head, food, body, alive)
-  q2 q3 = render_quad(8, w_nat, head, food, body, alive) render_quad(12, w_nat, head, food, body, alive)
+def render_grid_par(+w_nat: Nat, +pad_x: U32, +head: Pos, +food: Pos, +body: +List<Pos>, +alive: Bool) -> String:
+  q0 q1 = render_quad(0, w_nat, pad_x, head, food, body, alive) render_quad(4, w_nat, pad_x, head, food, body, alive)
+  q2 q3 = render_quad(8, w_nat, pad_x, head, food, body, alive) render_quad(12, w_nat, pad_x, head, food, body, alive)
   (q0 ++ q1) ++ (q2 ++ q3)
 
 def render_game_over(is_new_high: Bool, score: U32, high_score: U32) -> String:
   match is_new_high:
     case True{}:
-      "\u{1b}[1;32m🎉 NEW HIGH SCORE! 🏆 " ++ U32.show(score) ++ " 🎉\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33m[R]\u{1b}[0m Play Again  \u{1b}[1;36m[M]\u{1b}[0m Menu  \u{1b}[1;31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;38;2;74;222;128m🎉 NEW HIGH SCORE! 🏆 " ++ U32.show(score) ++ " 🎉\u{1b}[0m"
     case False{}:
-      "\u{1b}[1;31m💀 GAME OVER!\u{1b}[0m  \u{1b}[1;37mScore: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m  \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33m[R]\u{1b}[0m Play Again  \u{1b}[1;36m[M]\u{1b}[0m Menu  \u{1b}[1;31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;38;2;248;113;113m💀 GAME OVER!\u{1b}[0m   \u{1b}[1;37mScore: \u{1b}[1;38;2;74;222;128m" ++ U32.show(score) ++ "\u{1b}[0m   \u{1b}[1;37m🏆 Best: \u{1b}[1;38;2;250;204;21m" ++ U32.show(high_score) ++ "\u{1b}[0m"
 
 def render_status(alive: Bool, +score: U32, +high_score: U32) -> String:
   match alive:
     case True{}:
-      "\u{1b}[1;37m🍎 Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m  \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[37m[W/A/S/D or ↑/←/↓/→]\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;37m🍎 Score: \u{1b}[1;38;2;74;222;128m" ++ U32.show(score) ++ "\u{1b}[0m    \u{1b}[1;37m🏆 Best: \u{1b}[1;38;2;250;204;21m" ++ U32.show(high_score) ++ "\u{1b}[0m"
     case False{}:
       is_new = (score >= high_score : U32) && (score > 0 : U32)
       render_game_over(is_new, score, high_score)
 
-def render_frame(g: GameState, +w_nat: Nat, d: Diff) -> String:
+def solo_footer(alive: Bool) -> String:
+  match alive:
+    case True{}:
+      "\u{1b}[38;2;148;163;184m[WASD / ↑↓←→] Move   \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Restart   \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu   \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+    case False{}:
+      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Play Again   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+
+def wrap_cabinet(+pad_x: U32, +pad_y: U32, title_osc: String, header: String, status: String, wait_line: String, grid: String, footer: String) -> String:
+  +pfx = row_prefix(pad_x)
+  "\u{1b}[?2026h\u{1b}[H" ++ title_osc ++
+  top_blank_lines(U32.to_nat(pad_y)) ++
+  pfx ++ header ++ "\u{1b}[K\n" ++
+  pfx ++ status ++ "\u{1b}[K\n" ++
+  wait_line ++
+  pfx ++ cabinet_border_top() ++
+  grid ++
+  pfx ++ cabinet_border_bot() ++
+  pfx ++ footer ++ "\u{1b}[K\u{1b}[J\u{1b}[?2026l"
+
+def render_frame(g: GameState, +w_nat: Nat, d: Diff, +cols: U32, +rows: U32) -> String:
   Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
+  +pad_x = center_pad(cols, 50)
+  +pad_y = center_pad(rows, 21)
   badge = diff_badge(d)
-  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m   " ++ badge ++ "\u{1b}[K\n" : String}
-  border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
-  border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
-  grid = render_grid_par(w_nat, head, food, body, alive)
+  title_osc = "\u{1b}]2;🐍 Snake TUI — Score: " ++ U32.show(score) ++ " | Best: " ++ U32.show(high_score) ++ "\u{07}"
+  header = "\u{1b}[1;38;2;250;204;21m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m   " ++ badge
+  grid = render_grid_par(w_nat, pad_x, head, food, body, alive)
   status = render_status(alive, score, high_score)
-  (header ++ status) ++ (border_top ++ grid ++ border_bot)
+  footer = solo_footer(alive)
+  wrap_cabinet(pad_x, pad_y, title_osc, header, status, "", grid, footer)
 
 # Co-op Mode: 2 Players Steering 1 Snake
 def turn_coop(+cur: Dir, +k1: U32, +k2: U32) -> Dir:
@@ -414,7 +485,7 @@ def step_coop(g: GameState, +k1: U32, +k2: U32, +w: U32, +h: U32) -> GameState:
 def render_coop_status(alive: Bool, +score: U32, +high_score: U32) -> String:
   match alive:
     case True{}:
-      "\u{1b}[1;37m🍎 Co-op Score: \u{1b}[1;32m" ++ U32.show(score) ++ "\u{1b}[0m  \u{1b}[1;37m🏆 Best: \u{1b}[1;33m" ++ U32.show(high_score) ++ "\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[36m[P1] [P2]\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;37m🍎 Score: \u{1b}[1;38;2;74;222;128m" ++ U32.show(score) ++ "\u{1b}[0m    \u{1b}[1;37m🏆 Best: \u{1b}[1;38;2;250;204;21m" ++ U32.show(high_score) ++ "\u{1b}[0m    \u{1b}[38;2;56;189;248m[P1 + P2]\u{1b}[0m"
     case False{}:
       is_new = (score >= high_score : U32) && (score > 0 : U32)
       render_game_over(is_new, score, high_score)
@@ -444,30 +515,46 @@ def both_restart(rv: RestartVote) -> Bool:
     case _ _:
       False{}
 
-def render_restart_wait(rv: RestartVote, is_local: Bool) -> String:
-  RestartVote{r1, r2} = rv
+def render_restart_wait_inner(r1: Bool, r2: Bool, is_local: Bool, +pfx: String) -> String:
   match r1 r2 is_local:
     case True{} False{} True{}:
-      "\u{1b}[1;33m⏳ P1 voted Restart — P2 press [O / Enter] to confirm!\u{1b}[0m\u{1b}[K\n"
+      pfx ++ "\u{1b}[1;38;2;250;204;21m⏳ P1 voted Restart — P2 press [O / Enter] to confirm!\u{1b}[0m\u{1b}[K\n"
     case False{} True{} True{}:
-      "\u{1b}[1;33m⏳ P2 voted Restart — P1 press [R] to confirm!\u{1b}[0m\u{1b}[K\n"
+      pfx ++ "\u{1b}[1;38;2;250;204;21m⏳ P2 voted Restart — P1 press [R] to confirm!\u{1b}[0m\u{1b}[K\n"
     case True{} False{} False{}:
-      "\u{1b}[1;33m⏳ P1 ready to Restart — waiting for P2 [R]...\u{1b}[0m\u{1b}[K\n"
+      pfx ++ "\u{1b}[1;38;2;250;204;21m⏳ P1 ready to Restart — waiting for P2 [R]...\u{1b}[0m\u{1b}[K\n"
     case False{} True{} False{}:
-      "\u{1b}[1;33m⏳ P2 ready to Restart — waiting for P1 [R]...\u{1b}[0m\u{1b}[K\n"
+      pfx ++ "\u{1b}[1;38;2;250;204;21m⏳ P2 ready to Restart — waiting for P1 [R]...\u{1b}[0m\u{1b}[K\n"
     case _ _ _:
       ""
 
-def render_coop_frame(g: GameState, +w_nat: Nat, d: Diff, rv: RestartVote, is_local: Bool) -> String:
+def render_restart_wait(rv: RestartVote, is_local: Bool, +pad_x: U32) -> String:
+  RestartVote{r1, r2} = rv
+  render_restart_wait_inner(r1, r2, is_local, row_prefix(pad_x))
+
+def coop_footer(alive: Bool, is_local: Bool) -> String:
+  match alive is_local:
+    case True{} True{}:
+      "\u{1b}[38;2;148;163;184m[P1: WASD/R]  [P2: Arrows/Enter]  \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu  \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+    case True{} False{}:
+      "\u{1b}[38;2;148;163;184m[WASD / ↑↓←→] Move   \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Vote   \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu   \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+    case False{} True{}:
+      "\u{1b}[1;38;2;250;204;21m[P1: R / P2: Enter]\u{1b}[0m Play Again   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+    case False{} False{}:
+      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Vote Play Again   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+
+def render_coop_frame(g: GameState, +w_nat: Nat, d: Diff, rv: RestartVote, +is_local: Bool, +cols: U32, +rows: U32) -> String:
   Game{+head, +body, +dir, +food, +score, +high_score, +alive, +seed} = g
+  +pad_x = center_pad(cols, 50)
+  +pad_y = center_pad(rows, 21)
   badge = diff_badge(d)
-  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE CO-OP (2 PLAYERS, 1 SNAKE)  🐍\u{1b}[0m   " ++ badge ++ "\u{1b}[K\n" : String}
-  border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
-  border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
-  grid = render_grid_par(w_nat, head, food, body, alive)
+  title_osc = "\u{1b}]2;🐍 Snake Co-op — Score: " ++ U32.show(score) ++ "\u{07}"
+  header = "\u{1b}[1;38;2;250;204;21m🐍  BEND SNAKE CO-OP  🐍\u{1b}[0m   " ++ badge
+  grid = render_grid_par(w_nat, pad_x, head, food, body, alive)
   status = render_coop_status(alive, score, high_score)
-  wait_line = render_restart_wait(rv, is_local)
-  (header ++ status ++ wait_line) ++ (border_top ++ grid ++ border_bot)
+  wait_line = render_restart_wait(rv, is_local, pad_x)
+  footer = coop_footer(alive, is_local)
+  wrap_cabinet(pad_x, pad_y, title_osc, header, status, wait_line, grid, footer)
 
 # Versus Mode: 2 Snakes Duel
 type VersusWinner is Data:
@@ -641,132 +728,162 @@ def step_versus(vg: VersusState, +k1: U32, +k2: U32, +w: U32, +h: U32) -> Versus
 def p2_head_glyph(alive: Bool) -> String:
   match alive:
     case True{}:
-      "\u{1b}[38;5;201m██\u{1b}[0m"
+      "\u{1b}[38;2;255;110;255;48;2;40;14;44m██\u{1b}[0m"
     case False{}:
-      "\u{1b}[1;31m✖✖\u{1b}[0m"
+      "\u{1b}[1;38;2;255;77;109;48;2;42;10;20m✖✖\u{1b}[0m"
 
-def versus_char_empty() -> String:
-  "  "
+def purple_body_glyph() -> String:
+  "\u{1b}[38;2;220;70;240;48;2;50;16;60m▓▓\u{1b}[0m"
 
-def versus_char_food(is_f: Bool) -> String:
+def versus_char_food(is_f: Bool, +x: U32, +y: U32) -> String:
   match is_f:
     case True{}:
-      "🍎"
+      food_cell_bg(is_odd_tile(x, y))
     case False{}:
-      versus_char_empty()
+      empty_cell_bg(is_odd_tile(x, y))
 
-def versus_char_b2(is_b2: Bool, is_f: Bool) -> String:
+def versus_char_b2(is_b2: Bool, is_f: Bool, +x: U32, +y: U32) -> String:
   match is_b2:
     case True{}:
-      "\u{1b}[38;5;171m▒▒\u{1b}[0m"
+      purple_body_glyph()
     case False{}:
-      versus_char_food(is_f)
+      versus_char_food(is_f, x, y)
 
-def versus_char_b1(is_b1: Bool, is_b2: Bool, is_f: Bool) -> String:
+def versus_char_b1(is_b1: Bool, is_b2: Bool, is_f: Bool, +x: U32, +y: U32) -> String:
   match is_b1:
     case True{}:
-      "\u{1b}[38;5;40m▓▓\u{1b}[0m"
+      green_body_glyph()
     case False{}:
-      versus_char_b2(is_b2, is_f)
+      versus_char_b2(is_b2, is_f, x, y)
 
-def versus_char_h2(is_h2: Bool, is_b1: Bool, is_b2: Bool, is_f: Bool, a2: Bool) -> String:
+def versus_char_h2(is_h2: Bool, is_b1: Bool, is_b2: Bool, is_f: Bool, a2: Bool, +x: U32, +y: U32) -> String:
   match is_h2:
     case True{}:
       p2_head_glyph(a2)
     case False{}:
-      versus_char_b1(is_b1, is_b2, is_f)
+      versus_char_b1(is_b1, is_b2, is_f, x, y)
 
-def versus_char_h1(is_h1: Bool, is_h2: Bool, is_b1: Bool, is_b2: Bool, is_f: Bool, a1: Bool, a2: Bool) -> String:
+def versus_char_h1(is_h1: Bool, is_h2: Bool, is_b1: Bool, is_b2: Bool, is_f: Bool, a1: Bool, a2: Bool, +x: U32, +y: U32) -> String:
   match is_h1:
     case True{}:
       head_glyph(a1)
     case False{}:
-      versus_char_h2(is_h2, is_b1, is_b2, is_f, a2)
+      versus_char_h2(is_h2, is_b1, is_b2, is_f, a2, x, y)
 
-def versus_cell_char(+p: Pos, +h1: Pos, +b1: +List<Pos>, alive1: Bool, +h2: Pos, +b2: +List<Pos>, alive2: Bool, +food: Pos) -> String:
+def versus_cell_char(+x: U32, +y: U32, +h1: Pos, +b1: +List<Pos>, alive1: Bool, +h2: Pos, +b2: +List<Pos>, alive2: Bool, +food: Pos) -> String:
+  +p = {Pos{x, y} : Pos}
   is_h1 = pos_eq(p, h1)
   is_h2 = pos_eq(p, h2)
   is_b1 = contains_pos(b1, p)
   is_b2 = contains_pos(b2, p)
   is_f = pos_eq(p, food)
-  versus_char_h1(is_h1, is_h2, is_b1, is_b2, is_f, alive1, alive2)
+  versus_char_h1(is_h1, is_h2, is_b1, is_b2, is_f, alive1, alive2, x, y)
 
 def render_versus_cells(fuel: Nat, +x: U32, +y: U32, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
   match fuel:
     case 0n:
       ""
     case 1n+p:
-      c = versus_cell_char(Pos{x, y}, h1, b1, a1, h2, b2, a2, food)
+      c = versus_cell_char(x, y, h1, b1, a1, h2, b2, a2, food)
       c ++ render_versus_cells(p, (x + 1 : U32), y, h1, b1, a1, h2, b2, a2, food)
 
-def render_versus_row(+y: U32, +w_nat: Nat, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
-  "\u{1b}[38;5;39m║\u{1b}[0m" ++ render_versus_cells(w_nat, 0, y, h1, b1, a1, h2, b2, a2, food) ++ "\u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+def render_versus_row(+y: U32, +w_nat: Nat, +pad_x: U32, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
+  row_prefix(pad_x) ++ cabinet_side() ++ render_versus_cells(w_nat, 0, y, h1, b1, a1, h2, b2, a2, food) ++ cabinet_side() ++ "\u{1b}[K\n"
 
-def render_versus_quad(+y: U32, +w_nat: Nat, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
-  r0 r1 = render_versus_row(y, w_nat, h1, b1, a1, h2, b2, a2, food) render_versus_row((y + 1 : U32), w_nat, h1, b1, a1, h2, b2, a2, food)
-  r2 r3 = render_versus_row((y + 2 : U32), w_nat, h1, b1, a1, h2, b2, a2, food) render_versus_row((y + 3 : U32), w_nat, h1, b1, a1, h2, b2, a2, food)
+def render_versus_quad(+y: U32, +w_nat: Nat, +pad_x: U32, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
+  r0 r1 = render_versus_row(y, w_nat, pad_x, h1, b1, a1, h2, b2, a2, food) render_versus_row((y + 1 : U32), w_nat, pad_x, h1, b1, a1, h2, b2, a2, food)
+  r2 r3 = render_versus_row((y + 2 : U32), w_nat, pad_x, h1, b1, a1, h2, b2, a2, food) render_versus_row((y + 3 : U32), w_nat, pad_x, h1, b1, a1, h2, b2, a2, food)
   (r0 ++ r1) ++ (r2 ++ r3)
 
-def render_versus_grid_par(+w_nat: Nat, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
-  q0 q1 = render_versus_quad(0, w_nat, h1, b1, a1, h2, b2, a2, food) render_versus_quad(4, w_nat, h1, b1, a1, h2, b2, a2, food)
-  q2 q3 = render_versus_quad(8, w_nat, h1, b1, a1, h2, b2, a2, food) render_versus_quad(12, w_nat, h1, b1, a1, h2, b2, a2, food)
+def render_versus_grid_par(+w_nat: Nat, +pad_x: U32, +h1: Pos, +b1: +List<Pos>, +a1: Bool, +h2: Pos, +b2: +List<Pos>, +a2: Bool, +food: Pos) -> String:
+  q0 q1 = render_versus_quad(0, w_nat, pad_x, h1, b1, a1, h2, b2, a2, food) render_versus_quad(4, w_nat, pad_x, h1, b1, a1, h2, b2, a2, food)
+  q2 q3 = render_versus_quad(8, w_nat, pad_x, h1, b1, a1, h2, b2, a2, food) render_versus_quad(12, w_nat, pad_x, h1, b1, a1, h2, b2, a2, food)
   (q0 ++ q1) ++ (q2 ++ q3)
 
 def render_versus_status(winner: VersusWinner, +s1: U32, +s2: U32, +w1: U32, +w2: U32) -> String:
   match winner:
     case Active{}:
-      "\u{1b}[1;32m🍏 P1: \u{1b}[1;37m" ++ U32.show(s1) ++ " \u{1b}[1;33m(W:" ++ U32.show(w1) ++ ")\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;35m🍇 P2: \u{1b}[1;37m" ++ U32.show(s2) ++ " \u{1b}[1;33m(W:" ++ U32.show(w2) ++ ")\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Vote Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;38;2;74;222;128m🍏 P1: \u{1b}[1;37m" ++ U32.show(s1) ++ " \u{1b}[1;38;2;250;204;21m(W:" ++ U32.show(w1) ++ ")\u{1b}[0m   \u{1b}[90m│\u{1b}[0m   \u{1b}[1;38;2;232;121;249m🍇 P2: \u{1b}[1;37m" ++ U32.show(s2) ++ " \u{1b}[1;38;2;250;204;21m(W:" ++ U32.show(w2) ++ ")\u{1b}[0m"
     case P1Win{}:
-      "\u{1b}[1;32m🎉 P1 (GREEN) WINS! 🏆\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;38;2;74;222;128m🎉 P1 (GREEN) WINS! 🏆\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[1;38;2;250;204;21m(W:" ++ U32.show(w1) ++ "-" ++ U32.show(w2) ++ ")\u{1b}[0m"
     case P2Win{}:
-      "\u{1b}[1;35m🎉 P2 (PURPLE) WINS! 🏆\u{1b}[0m  " ++ U32.show(s2) ++ "-" ++ U32.show(s1) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;38;2;232;121;249m🎉 P2 (PURPLE) WINS! 🏆\u{1b}[0m  " ++ U32.show(s2) ++ "-" ++ U32.show(s1) ++ "  \u{1b}[1;38;2;250;204;21m(W:" ++ U32.show(w1) ++ "-" ++ U32.show(w2) ++ ")\u{1b}[0m"
     case Draw{}:
-      "\u{1b}[1;31m⚔️ DRAW! ⚔️\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[90m│\u{1b}[0m  \u{1b}[1;33mWins: P1 " ++ U32.show(w1) ++ " - " ++ U32.show(w2) ++ " P2\u{1b}[0m  \u{1b}[90m│\u{1b}[0m  \u{1b}[33m[R]\u{1b}[0m Both Restart  \u{1b}[36m[M]\u{1b}[0m Menu  \u{1b}[31m[Q]\u{1b}[0m Quit\u{1b}[K\n"
+      "\u{1b}[1;38;2;248;113;113m⚔️ DRAW! ⚔️\u{1b}[0m  " ++ U32.show(s1) ++ "-" ++ U32.show(s2) ++ "  \u{1b}[1;38;2;250;204;21m(W:" ++ U32.show(w1) ++ "-" ++ U32.show(w2) ++ ")\u{1b}[0m"
+
+def versus_footer(winner: VersusWinner, is_local: Bool) -> String:
+  match winner is_local:
+    case Active{} True{}:
+      "\u{1b}[38;2;148;163;184m[P1: WASD/R]  [P2: Arrows/Enter]  \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu  \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+    case Active{} False{}:
+      "\u{1b}[38;2;148;163;184m[WASD / ↑↓←→] Move   \u{1b}[38;2;250;204;21m[R]\u{1b}[38;2;148;163;184m Vote   \u{1b}[38;2;56;189;248m[M]\u{1b}[38;2;148;163;184m Menu   \u{1b}[38;2;248;113;113m[Q]\u{1b}[38;2;148;163;184m Quit\u{1b}[0m"
+    case _ True{}:
+      "\u{1b}[1;38;2;250;204;21m[P1: R / P2: Enter]\u{1b}[0m Rematch   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
+    case _ False{}:
+      "\u{1b}[1;38;2;250;204;21m[R]\u{1b}[0m Both Rematch   \u{1b}[1;38;2;56;189;248m[M]\u{1b}[0m Menu   \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m Quit"
 
 def get_versus_max_score(vg: VersusState) -> U32:
   VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, +seed, +w1, +w2} = vg
   max_score(s1, s2)
 
-def render_versus_frame(vg: VersusState, +w_nat: Nat, d: Diff, rv: RestartVote, is_local: Bool) -> String:
+def render_versus_frame(vg: VersusState, +w_nat: Nat, d: Diff, rv: RestartVote, +is_local: Bool, +cols: U32, +rows: U32) -> String:
   VersusGame{+h1, +b1, +d1, +a1, +s1, +h2, +b2, +d2, +a2, +s2, +food, +winner, +seed, +w1, +w2} = vg
+  +pad_x = center_pad(cols, 50)
+  +pad_y = center_pad(rows, 21)
   badge = diff_badge(d)
-  header = {"\u{1b}[H\u{1b}[1;33m🐍  BEND SNAKE VERSUS (2 SNAKES DUEL)  🐍\u{1b}[0m   " ++ badge ++ "\u{1b}[K\n" : String}
-  border_top = {"\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" : String}
-  border_bot = {"\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\u{1b}[J\n" : String}
-  grid = render_versus_grid_par(w_nat, h1, b1, a1, h2, b2, a2, food)
+  title_osc = "\u{1b}]2;🐍 Snake Versus — P1 " ++ U32.show(s1) ++ " vs P2 " ++ U32.show(s2) ++ "\u{07}"
+  header = "\u{1b}[1;38;2;250;204;21m🐍  BEND SNAKE VERSUS  🐍\u{1b}[0m   " ++ badge
+  grid = render_versus_grid_par(w_nat, pad_x, h1, b1, a1, h2, b2, a2, food)
   status = render_versus_status(winner, s1, s2, w1, w2)
-  wait_line = render_restart_wait(rv, is_local)
-  (header ++ status ++ wait_line) ++ (border_top ++ grid ++ border_bot)
+  wait_line = render_restart_wait(rv, is_local, pad_x)
+  footer = versus_footer(winner, is_local)
+  wrap_cabinet(pad_x, pad_y, title_osc, header, status, wait_line, grid, footer)
 
-def diff_menu_line(d: Diff) -> String:
+def diff_menu_text(d: Diff, +bg: String) -> String:
   match d:
     case Easy{}:
-      "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[D]\u{1b}[0m \u{1b}[1;37mSpeed:\u{1b}[0m \u{1b}[1;32m🐢 Easy\u{1b}[0m   \u{1b}[90m(165ms, Steady)\u{1b}[0m          \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+      "  \u{1b}[1;33m[D]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mSpeed:\u{1b}[0m" ++ bg ++ " \u{1b}[1;32m🐢 Easy\u{1b}[0m" ++ bg ++ "   \u{1b}[90m(165ms, Steady)\u{1b}[0m" ++ bg ++ "          \u{1b}[0m"
     case Normal{}:
-      "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[D]\u{1b}[0m \u{1b}[1;37mSpeed:\u{1b}[0m \u{1b}[1;36m🐍 Normal\u{1b}[0m \u{1b}[90m(120ms -> 75ms)\u{1b}[0m          \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+      "  \u{1b}[1;33m[D]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mSpeed:\u{1b}[0m" ++ bg ++ " \u{1b}[1;36m🐍 Normal\u{1b}[0m" ++ bg ++ " \u{1b}[90m(120ms -> 75ms)\u{1b}[0m" ++ bg ++ "          \u{1b}[0m"
     case Hard{}:
-      "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[D]\u{1b}[0m \u{1b}[1;37mSpeed:\u{1b}[0m \u{1b}[1;33m🔥 Hard\u{1b}[0m   \u{1b}[90m(85ms  -> 55ms)\u{1b}[0m          \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+      "  \u{1b}[1;33m[D]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mSpeed:\u{1b}[0m" ++ bg ++ " \u{1b}[1;33m🔥 Hard\u{1b}[0m" ++ bg ++ "   \u{1b}[90m(85ms  -> 55ms)\u{1b}[0m" ++ bg ++ "          \u{1b}[0m"
     case Turbo{}:
-      "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[D]\u{1b}[0m \u{1b}[1;37mSpeed:\u{1b}[0m \u{1b}[1;31m⚡ Turbo\u{1b}[0m  \u{1b}[90m(60ms  -> 40ms)\u{1b}[0m          \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n"
+      "  \u{1b}[1;33m[D]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mSpeed:\u{1b}[0m" ++ bg ++ " \u{1b}[1;31m⚡ Turbo\u{1b}[0m" ++ bg ++ "  \u{1b}[90m(60ms  -> 40ms)\u{1b}[0m" ++ bg ++ "          \u{1b}[0m"
 
-def render_menu(d: Diff) -> String:
-  dline = diff_menu_line(d)
-  "\u{1b}[H\u{1b}[2J\u{1b}[1;33m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m╔════════════════════════════════════════════════╗\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m          \u{1b}[1;37mCHOOSE GAME MODE & MULTIPLAYER\u{1b}[0m        \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m╠════════════════════════════════════════════════╣\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m                                                \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;32m[1]\u{1b}[0m \u{1b}[1;37mSolo Classic\u{1b}[0m     - High score chase       \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m                                                \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;36m[2]\u{1b}[0m \u{1b}[1;37mHost LAN Co-op\u{1b}[0m   - 2 players, 1 snake     \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;35m[3]\u{1b}[0m \u{1b}[1;37mHost LAN Versus\u{1b}[0m  - 2 snakes battle duel   \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;32m[4]\u{1b}[0m \u{1b}[1;37mJoin LAN Room\u{1b}[0m    - Browse & pick room     \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m                                                \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[5]\u{1b}[0m \u{1b}[1;37mLocal Co-op\u{1b}[0m      - 1 keyboard (WASD/Arrow)\u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;33m[6]\u{1b}[0m \u{1b}[1;37mLocal Versus\u{1b}[0m     - 1 keyboard (WASD/Arrow)\u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m╠════════════════════════════════════════════════╣\u{1b}[0m\u{1b}[K\n" ++
+def diff_menu_line(d: Diff, +pfx: String) -> String:
+  +s = cabinet_side()
+  +bg = {"\u{1b}[48;2;10;14;23m" : String}
+  pfx ++ s ++ bg ++ diff_menu_text(d, bg) ++ s ++ "\u{1b}[K\n"
+
+def render_menu(d: Diff, +cols: U32, +rows: U32) -> String:
+  +pad_x = center_pad(cols, 50)
+  +pad_y = center_pad(rows, 20)
+  +pfx = row_prefix(pad_x)
+  +s = cabinet_side()
+  +bg = {"\u{1b}[48;2;10;14;23m" : String}
+  +mid = {"\u{1b}[38;2;56;189;248;48;2;10;14;23m╠════════════════════════════════════════════════╣\u{1b}[0m\u{1b}[K\n" : String}
+  +blank = pfx ++ s ++ bg ++ "                                                \u{1b}[0m" ++ s ++ "\u{1b}[K\n"
+  dline = diff_menu_line(d, pfx)
+  "\u{1b}[?2026h\u{1b}[H\u{1b}]2;🐍 Bend Snake Arcade\u{07}" ++
+  top_blank_lines(U32.to_nat(pad_y)) ++
+  pfx ++ "\u{1b}[1;38;2;250;204;21m🐍  BEND SNAKE ARCADE  🐍\u{1b}[0m\u{1b}[K\n" ++
+  pfx ++ cabinet_border_top() ++
+  pfx ++ s ++ bg ++ "          \u{1b}[1;37mCHOOSE GAME MODE & MULTIPLAYER\u{1b}[0m" ++ bg ++ "        \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  pfx ++ mid ++
+  blank ++
+  pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;74;222;128m[1]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mSolo Classic\u{1b}[0m" ++ bg ++ "     - High score chase       \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  blank ++
+  pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;56;189;248m[2]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mHost LAN Co-op\u{1b}[0m" ++ bg ++ "   - 2 players, 1 snake     \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;232;121;249m[3]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mHost LAN Versus\u{1b}[0m" ++ bg ++ "  - 2 snakes battle duel   \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;74;222;128m[4]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mJoin LAN Room\u{1b}[0m" ++ bg ++ "    - Browse & pick room     \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  blank ++
+  pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;250;204;21m[5]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mLocal Co-op\u{1b}[0m" ++ bg ++ "      - 1 keyboard (WASD/Arrow)\u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;250;204;21m[6]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mLocal Versus\u{1b}[0m" ++ bg ++ "     - 1 keyboard (WASD/Arrow)\u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  pfx ++ mid ++
   dline ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[1;31m[Q]\u{1b}[0m \u{1b}[1;37mQuit Game\u{1b}[0m                                 \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m╠════════════════════════════════════════════════╣\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m║\u{1b}[0m  \u{1b}[90mDefault Port: 4242  │  [1-6, D, ←/→, Q]\u{1b}[0m       \u{1b}[38;5;39m║\u{1b}[0m\u{1b}[K\n" ++
-  "\u{1b}[38;5;39m╚════════════════════════════════════════════════╝\u{1b}[0m\u{1b}[K\n\n\u{1b}[1;37mSelect an option [1-6, D, Q]: \u{1b}[0m\u{1b}[K"
+  pfx ++ s ++ bg ++ "  \u{1b}[1;38;2;248;113;113m[Q]\u{1b}[0m" ++ bg ++ " \u{1b}[1;37mQuit Game\u{1b}[0m" ++ bg ++ "                                 \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  pfx ++ mid ++
+  pfx ++ s ++ bg ++ "  \u{1b}[90mDefault Port: 4242  │  [1-6, D, ←/→, Q]\u{1b}[0m" ++ bg ++ "       \u{1b}[0m" ++ s ++ "\u{1b}[K\n" ++
+  pfx ++ cabinet_border_bot() ++
+  "\u{1b}[2K\n" ++
+  pfx ++ "\u{1b}[1;37mSelect an option [1-6, D, Q]: \u{1b}[0m\u{1b}[K\u{1b}[J\u{1b}[?2026l"

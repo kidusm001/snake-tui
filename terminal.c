@@ -5,9 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <poll.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <signal.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -20,8 +22,58 @@
 
 static struct termios orig_termios;
 static int raw_mode_set = 0;
+static int alt_screen_set = 0;
+static int term_active = 0;
+static int cleanup_registered = 0;
+
+static void get_winsize_dims(uint32_t* cols_out, uint32_t* rows_out) {
+  struct winsize ws;
+  memset(&ws, 0, sizeof(ws));
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0 && ws.ws_row > 0) {
+    *cols_out = (uint32_t)ws.ws_col;
+    *rows_out = (uint32_t)ws.ws_row;
+    return;
+  }
+  if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0 && ws.ws_row > 0) {
+    *cols_out = (uint32_t)ws.ws_col;
+    *rows_out = (uint32_t)ws.ws_row;
+    return;
+  }
+  *cols_out = 80;
+  *rows_out = 24;
+}
+
+static void term_cleanup_internal(void) {
+  if (!term_active) {
+    return;
+  }
+  term_active = 0;
+  if (raw_mode_set) {
+    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
+    raw_mode_set = 0;
+  }
+  if (alt_screen_set) {
+    const char seq[] = "\x1b[0m\x1b[?2026l\x1b[?25h\x1b[?1049l\x1b]2;\x07";
+    (void)write(STDOUT_FILENO, seq, sizeof(seq) - 1);
+    alt_screen_set = 0;
+  } else {
+    const char seq[] = "\x1b[0m\x1b[?2026l\x1b[?25h\n";
+    (void)write(STDOUT_FILENO, seq, sizeof(seq) - 1);
+  }
+}
+
+static void term_signal_handler(int sig) {
+  term_cleanup_internal();
+  _exit(128 + sig);
+}
 
 Term term_init_run(Env e, Term* f, IoWork* w) {
+  if (!cleanup_registered) {
+    atexit(term_cleanup_internal);
+    signal(SIGINT, term_signal_handler);
+    signal(SIGTERM, term_signal_handler);
+    cleanup_registered = 1;
+  }
   if (!raw_mode_set) {
     if (tcgetattr(STDIN_FILENO, &orig_termios) == 0) {
       struct termios raw = orig_termios;
@@ -33,17 +85,28 @@ Term term_init_run(Env e, Term* f, IoWork* w) {
       raw_mode_set = 1;
     }
   }
-  write(STDOUT_FILENO, "\x1b[2J\x1b[H\x1b[?25l", 13);
+  const char init_seq[] = "\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l\x1b]2;Snake TUI\x07";
+  (void)write(STDOUT_FILENO, init_seq, sizeof(init_seq) - 1);
+  alt_screen_set = 1;
+  term_active = 1;
   return term_pak(CID(Unit), 0);
 }
 
 Term term_restore_run(Env e, Term* f, IoWork* w) {
-  if (raw_mode_set) {
-    tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
-    raw_mode_set = 0;
-  }
-  write(STDOUT_FILENO, "\x1b[?25h\n", 7);
+  term_cleanup_internal();
   return term_pak(CID(Unit), 0);
+}
+
+Term get_term_cols_run(Env e, Term* f, IoWork* w) {
+  uint32_t cols = 80, rows = 24;
+  get_winsize_dims(&cols, &rows);
+  return (Term)cols;
+}
+
+Term get_term_rows_run(Env e, Term* f, IoWork* w) {
+  uint32_t cols = 80, rows = 24;
+  get_winsize_dims(&cols, &rows);
+  return (Term)rows;
 }
 
 Term term_poll_key_run(Env e, Term* f, IoWork* w) {
@@ -659,13 +722,25 @@ static const char* browse_diff_str(uint32_t diff) {
 }
 
 static void render_room_browser(const LanRoom* rooms, int count, int sel, const char* status_msg) {
-  printf("\x1b[H\x1b[2J\x1b[1;36m🌐  LAN ROOM BROWSER  🌐\x1b[0m   \x1b[90m(Live auto-scan)\x1b[0m\n");
-  printf("\x1b[38;5;39m╔═════╦═════════════╦═════════════════════════╦═══════════════╗\x1b[0m\n");
-  printf("\x1b[38;5;39m║\x1b[0m \x1b[1;37m # \x1b[0m \x1b[38;5;39m║\x1b[0m \x1b[1;37mMODE       \x1b[0m \x1b[38;5;39m║\x1b[0m \x1b[1;37mROOM / HOST            \x1b[0m \x1b[38;5;39m║\x1b[0m \x1b[1;37mSPEED        \x1b[0m \x1b[38;5;39m║\x1b[0m\n");
-  printf("\x1b[38;5;39m╠═════╬═════════════╬═════════════════════════╬═══════════════╣\x1b[0m\n");
+  uint32_t cols = 80, rows = 24;
+  get_winsize_dims(&cols, &rows);
+  uint32_t box_w = 63;
+  uint32_t box_h = (uint32_t)(8 + (count == 0 ? 2 : count));
+  uint32_t pad_x = (cols > box_w) ? (cols - box_w) / 2 : 0;
+  uint32_t pad_y = (rows > box_h) ? (rows - box_h) / 2 : 0;
+  uint32_t col = pad_x + 1;
+
+  printf("\x1b[?2026h\x1b[H");
+  for (uint32_t y = 0; y < pad_y; y++) {
+    printf("\x1b[2K\n");
+  }
+  printf("\x1b[2K\x1b[%uG\x1b[1;36m🌐  LAN ROOM BROWSER  🌐\x1b[0m   \x1b[90m(Live auto-scan)\x1b[0m\n", col);
+  printf("\x1b[2K\x1b[%uG\x1b[38;2;56;189;248m╔═════╦═════════════╦═════════════════════════╦═══════════════╗\x1b[0m\n", col);
+  printf("\x1b[2K\x1b[%uG\x1b[38;2;56;189;248m║\x1b[0m \x1b[1;37m # \x1b[0m \x1b[38;2;56;189;248m║\x1b[0m \x1b[1;37mMODE       \x1b[0m \x1b[38;2;56;189;248m║\x1b[0m \x1b[1;37mROOM / HOST            \x1b[0m \x1b[38;2;56;189;248m║\x1b[0m \x1b[1;37mSPEED        \x1b[0m \x1b[38;2;56;189;248m║\x1b[0m\n", col);
+  printf("\x1b[2K\x1b[%uG\x1b[38;2;56;189;248m╠═════╬═════════════╬═════════════════════════╬═══════════════╣\x1b[0m\n", col);
   if (count == 0) {
-    printf("\x1b[38;5;39m║\x1b[0m  \x1b[90mSearching for rooms on local network...                   \x1b[0m \x1b[38;5;39m║\x1b[0m\n");
-    printf("\x1b[38;5;39m║\x1b[0m  \x1b[90mStart Host LAN Co-op or Versus on another PC!             \x1b[0m \x1b[38;5;39m║\x1b[0m\n");
+    printf("\x1b[2K\x1b[%uG\x1b[38;2;56;189;248m║\x1b[0m  \x1b[90mSearching for rooms on local network...                   \x1b[0m \x1b[38;2;56;189;248m║\x1b[0m\n", col);
+    printf("\x1b[2K\x1b[%uG\x1b[38;2;56;189;248m║\x1b[0m  \x1b[90mStart Host LAN Co-op or Versus on another PC!             \x1b[0m \x1b[38;2;56;189;248m║\x1b[0m\n", col);
   } else {
     for (int i = 0; i < count; i++) {
       const char* arrow = (i == sel) ? "\x1b[1;33m>\x1b[0m" : " ";
@@ -677,15 +752,15 @@ static void render_room_browser(const LanRoom* rooms, int count, int sel, const 
       int max_name = 23 - 3 - (int)ip_len;
       if (max_name < 3) max_name = 3;
       snprintf(label, sizeof(label), "%.*s (%s)", max_name, rooms[i].name, rooms[i].ip);
-      printf("\x1b[38;5;39m║\x1b[0m %s\x1b[1;37m%d\x1b[0m  \x1b[38;5;39m║\x1b[0m %s \x1b[38;5;39m║\x1b[0m %-23.23s \x1b[38;5;39m║\x1b[0m %s \x1b[38;5;39m║\x1b[0m\n",
-             arrow, i + 1, mode_str, label, browse_diff_str(rooms[i].diff));
+      printf("\x1b[2K\x1b[%uG\x1b[38;2;56;189;248m║\x1b[0m %s\x1b[1;37m%d\x1b[0m  \x1b[38;2;56;189;248m║\x1b[0m %s \x1b[38;2;56;189;248m║\x1b[0m %-23.23s \x1b[38;2;56;189;248m║\x1b[0m %s \x1b[38;2;56;189;248m║\x1b[0m\n",
+             col, arrow, i + 1, mode_str, label, browse_diff_str(rooms[i].diff));
     }
   }
-  printf("\x1b[38;5;39m╚═════╩═════════════╩═════════════════════════╩═══════════════╝\x1b[0m\n");
+  printf("\x1b[2K\x1b[%uG\x1b[38;2;56;189;248m╚═════╩═════════════╩═════════════════════════╩═══════════════╝\x1b[0m\n", col);
   if (status_msg && status_msg[0]) {
-    printf("%s\n", status_msg);
+    printf("\x1b[2K\x1b[%uG%s\n", col, status_msg);
   }
-  printf("\n  \x1b[1;33m[1-9 / Enter]\x1b[0m Join Room   \x1b[1;33m[↑/↓]\x1b[0m Move   \x1b[1;33m[R]\x1b[0m Rescan   \x1b[1;33m[M]\x1b[0m Manual IP   \x1b[1;31m[Q]\x1b[0m Back\n");
+  printf("\x1b[2K\n\x1b[2K\x1b[%uG\x1b[1;33m[1-9 / Enter]\x1b[0m Join   \x1b[1;33m[↑/↓]\x1b[0m Move   \x1b[1;33m[R]\x1b[0m Rescan   \x1b[1;33m[M]\x1b[0m Manual IP   \x1b[1;31m[Q]\x1b[0m Back\x1b[J\x1b[?2026l\n", col);
   fflush(stdout);
 }
 
@@ -1217,4 +1292,6 @@ static void __attribute__((constructor)) term_eff_register(void) {
   io_eff(CID(net_get_lan_diff), net_get_lan_diff_run);
   io_eff(CID(net_set_lan_mode), net_set_lan_mode_run);
   io_eff(CID(net_browse_join), net_browse_join_run);
+  io_eff(CID(get_term_cols), get_term_cols_run);
+  io_eff(CID(get_term_rows), get_term_rows_run);
 }
