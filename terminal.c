@@ -536,7 +536,9 @@ Term net_listen_run(Env e, Term* f, IoWork* w) {
   int flags = fcntl(server_sock, F_GETFL, 0);
   fcntl(server_sock, F_SETFL, flags | O_NONBLOCK);
 
-  active_lan_seed = ((uint32_t)time(NULL) ^ ((uint32_t)getpid() << 16) ^ (uint32_t)rand()) & 0x7FFFFFFFu;
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  active_lan_seed = ((uint32_t)time(NULL) ^ (uint32_t)ts.tv_nsec ^ ((uint32_t)getpid() << 16) ^ (uint32_t)rand()) & 0x7FFFFFFFu;
   if (active_lan_seed == 0) active_lan_seed = 1337;
   init_room_name();
 
@@ -1018,7 +1020,11 @@ Term get_random_seed_run(Env e, Term* f, IoWork* w) {
   if (server_sock >= 0 || client_sock >= 0) {
     return (Term)active_lan_seed;
   }
-  uint32_t s = ((uint32_t)time(NULL) ^ ((uint32_t)getpid() << 16) ^ (uint32_t)rand()) & 0x7FFFFFFFu;
+  static uint32_t seed_seq = 0;
+  seed_seq++;
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  uint32_t s = ((uint32_t)time(NULL) ^ (uint32_t)ts.tv_nsec ^ ((uint32_t)getpid() << 16) ^ (seed_seq * 2654435761u)) & 0x7FFFFFFFu;
   if (s == 0) s = 1337;
   return (Term)s;
 }
